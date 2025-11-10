@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, ReactNode } from 'react'
-import { User, Venue, Session, Event, Rating } from '../types'
+import { User, Venue, Session, Event, Rating, Goal, Habit, HabitCompletion, Reflection, Badge } from '../types'
 
 interface AppContextType {
   currentUser: User | null
@@ -8,9 +8,21 @@ interface AppContextType {
   sessions: Session[]
   events: Event[]
   ratings: Rating[]
+  goals: Goal[]
+  habits: Habit[]
+  habitCompletions: HabitCompletion[]
+  reflections: Reflection[]
+  badges: Badge[]
   addSession: (session: Session) => void
   addEvent: (event: Event) => void
   addRating: (rating: Rating) => void
+  addGoal: (goal: Goal) => void
+  updateGoal: (goalId: string, updates: Partial<Goal>) => void
+  addHabit: (habit: Habit) => void
+  updateHabit: (habitId: string, updates: Partial<Habit>) => void
+  toggleHabitCompletion: (habitId: string, date: string) => void
+  addReflection: (reflection: Reflection) => void
+  addBadge: (badge: Badge) => void
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined)
@@ -69,6 +81,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [sessions, setSessions] = useState<Session[]>([])
   const [events, setEvents] = useState<Event[]>([])
   const [ratings, setRatings] = useState<Rating[]>([])
+  const [goals, setGoals] = useState<Goal[]>([])
+  const [habits, setHabits] = useState<Habit[]>([])
+  const [habitCompletions, setHabitCompletions] = useState<HabitCompletion[]>([])
+  const [reflections, setReflections] = useState<Reflection[]>([])
+  const [badges, setBadges] = useState<Badge[]>([])
 
   const addSession = (session: Session) => {
     setSessions([...sessions, session])
@@ -82,6 +99,50 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setRatings([...ratings, rating])
   }
 
+  const addGoal = (goal: Goal) => {
+    setGoals([...goals, goal])
+  }
+
+  const updateGoal = (goalId: string, updates: Partial<Goal>) => {
+    setGoals(goals.map(g => g.id === goalId ? { ...g, ...updates, updatedAt: new Date().toISOString() } : g))
+  }
+
+  const addHabit = (habit: Habit) => {
+    setHabits([...habits, habit])
+  }
+
+  const updateHabit = (habitId: string, updates: Partial<Habit>) => {
+    setHabits(habits.map(h => h.id === habitId ? { ...h, ...updates, updatedAt: new Date().toISOString() } : h))
+  }
+
+  const toggleHabitCompletion = (habitId: string, date: string) => {
+    const existing = habitCompletions.find(
+      hc => hc.habitId === habitId && hc.date === date
+    )
+    
+    if (existing) {
+      setHabitCompletions(habitCompletions.filter(hc => hc.id !== existing.id))
+    } else {
+      const newCompletion: HabitCompletion = {
+        id: `hc-${Date.now()}`,
+        habitId,
+        userId: currentUser?.id || '',
+        date,
+        completed: true,
+        createdAt: new Date().toISOString()
+      }
+      setHabitCompletions([...habitCompletions, newCompletion])
+    }
+  }
+
+  const addReflection = (reflection: Reflection) => {
+    setReflections([...reflections, reflection])
+  }
+
+  const addBadge = (badge: Badge) => {
+    setBadges([...badges, badge])
+  }
+
   return (
     <AppContext.Provider value={{
       currentUser,
@@ -90,9 +151,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
       sessions,
       events,
       ratings,
+      goals,
+      habits,
+      habitCompletions,
+      reflections,
+      badges,
       addSession,
       addEvent,
-      addRating
+      addRating,
+      addGoal,
+      updateGoal,
+      addHabit,
+      updateHabit,
+      toggleHabitCompletion,
+      addReflection,
+      addBadge
     }}>
       {children}
     </AppContext.Provider>

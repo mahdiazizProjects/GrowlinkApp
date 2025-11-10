@@ -10,6 +10,9 @@ import Events from './pages/Events'
 import Venues from './pages/Venues'
 import Dashboard from './pages/Dashboard'
 import BookSession from './pages/BookSession'
+import Goals from './pages/Goals'
+import Habits from './pages/Habits'
+import Reflections from './pages/Reflections'
 
 function App() {
   return (
@@ -27,6 +30,9 @@ function App() {
               <Route path="/venues" element={<Venues />} />
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/book/:mentorId" element={<BookSession />} />
+              <Route path="/goals" element={<Goals />} />
+              <Route path="/habits" element={<Habits />} />
+              <Route path="/reflections" element={<Reflections />} />
             </Routes>
           </main>
           <Footer />

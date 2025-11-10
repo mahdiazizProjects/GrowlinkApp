@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
-import { User, MessageCircle, Calendar, MapPin, Home, LogIn } from 'lucide-react'
+import { User, MessageCircle, Calendar, MapPin, Home, LogIn, Target, CheckCircle, BookOpen } from 'lucide-react'
 import { useApp } from '../../context/AppContext'
 
 export default function Navbar() {
@@ -38,6 +38,21 @@ export default function Navbar() {
               Venues
             </NavLink>
           </div>
+
+          {/* Habit Features (when logged in) */}
+          {currentUser && (
+            <div className="hidden lg:flex items-center space-x-1 mr-4">
+              <NavLink to="/goals" icon={<Target size={18} />} active={isActive('/goals')}>
+                Goals
+              </NavLink>
+              <NavLink to="/habits" icon={<CheckCircle size={18} />} active={isActive('/habits')}>
+                Habits
+              </NavLink>
+              <NavLink to="/reflections" icon={<BookOpen size={18} />} active={isActive('/reflections')}>
+                Reflections
+              </NavLink>
+            </div>
+          )}
 
           {/* User Actions */}
           <div className="flex items-center space-x-4">
