@@ -1,12 +1,21 @@
 import { Link, useLocation } from 'react-router-dom'
 import { User, MessageCircle, Calendar, MapPin, Home, LogIn, Target, CheckCircle, BookOpen } from 'lucide-react'
 import { useApp } from '../../context/AppContext'
+import NotificationSystem from '../notifications/NotificationSystem'
+import { useState } from 'react'
+import UserProfile from '../profile/UserProfile'
 
 export default function Navbar() {
   const location = useLocation()
-  const { currentUser } = useApp()
+  const { currentUser, setCurrentUser, notifications, getUnreadNotificationCount, markNotificationAsRead } = useApp()
+  const [showProfile, setShowProfile] = useState(false)
 
   const isActive = (path: string) => location.pathname === path
+
+  const handleLogout = () => {
+    setCurrentUser(null)
+    setShowProfile(false)
+  }
 
   return (
     <nav className="bg-white shadow-lg border-b border-gray-100 sticky top-0 z-50">
@@ -63,6 +72,14 @@ export default function Navbar() {
                     ✨ Exclusive Member
                   </span>
                 )}
+                {/* Notifications for mentors */}
+                {currentUser.role === 'mentor' && (
+                  <NotificationSystem
+                    notifications={notifications.filter(n => n.userId === currentUser.id)}
+                    unreadCount={getUnreadNotificationCount(currentUser.id)}
+                    onMarkAsRead={markNotificationAsRead}
+                  />
+                )}
                 <Link
                   to="/dashboard"
                   className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
@@ -73,9 +90,21 @@ export default function Navbar() {
                 >
                   <span className="hidden md:inline">Dashboard</span>
                 </Link>
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-white font-semibold">
-                  {currentUser.name.charAt(0)}
-                </div>
+                <button
+                  onClick={() => setShowProfile(true)}
+                  className="w-10 h-10 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-white font-semibold hover:from-primary-500 hover:to-primary-700 transition-all cursor-pointer"
+                  title="View Profile"
+                >
+                  {currentUser.avatar ? (
+                    <img 
+                      src={currentUser.avatar} 
+                      alt={currentUser.name} 
+                      className="w-full h-full rounded-full object-cover"
+                    />
+                  ) : (
+                    currentUser.name.charAt(0)
+                  )}
+                </button>
               </>
             ) : (
               <Link
@@ -89,6 +118,17 @@ export default function Navbar() {
           </div>
         </div>
       </div>
+
+      {/* Profile Modal */}
+      {showProfile && currentUser && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <UserProfile
+            user={currentUser}
+            onClose={() => setShowProfile(false)}
+            onLogout={handleLogout}
+          />
+        </div>
+      )}
     </nav>
   )
 }

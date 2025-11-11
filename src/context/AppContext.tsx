@@ -1,5 +1,5 @@
-import { createContext, useContext, useState, ReactNode } from 'react'
-import { User, Venue, Session, Event, Rating, Goal, Habit, HabitCompletion, Reflection, Badge } from '../types'
+import { createContext, useContext, useState, ReactNode, useMemo } from 'react'
+import { User, Venue, Session, Event, Rating, Goal, Habit, HabitCompletion, Reflection, Badge, SessionFeedback, MentorFeedbackStats, MentorSessionNotes, Notification, MentorStats, MenteeSummary } from '../types'
 
 interface AppContextType {
   currentUser: User | null
@@ -13,7 +13,11 @@ interface AppContextType {
   habitCompletions: HabitCompletion[]
   reflections: Reflection[]
   badges: Badge[]
+  sessionFeedbacks: SessionFeedback[]
+  mentorSessionNotes: MentorSessionNotes[]
+  notifications: Notification[]
   addSession: (session: Session) => void
+  updateSession: (sessionId: string, updates: Partial<Session>) => void
   addEvent: (event: Event) => void
   addRating: (rating: Rating) => void
   addGoal: (goal: Goal) => void
@@ -23,6 +27,16 @@ interface AppContextType {
   toggleHabitCompletion: (habitId: string, date: string) => void
   addReflection: (reflection: Reflection) => void
   addBadge: (badge: Badge) => void
+  addSessionFeedback: (feedback: SessionFeedback) => void
+  getMentorFeedbackStats: (mentorId: string) => MentorFeedbackStats | null
+  addMentorSessionNotes: (notes: MentorSessionNotes) => void
+  updateMentorSessionNotes: (noteId: string, updates: Partial<MentorSessionNotes>) => void
+  getMentorSessionNotes: (sessionId: string) => MentorSessionNotes | null
+  addNotification: (notification: Notification) => void
+  markNotificationAsRead: (notificationId: string) => void
+  getUnreadNotificationCount: (userId: string) => number
+  getMentorStats: (mentorId: string) => MentorStats | null
+  getMenteeSummaries: (mentorId: string) => MenteeSummary[]
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined)
@@ -86,9 +100,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [habitCompletions, setHabitCompletions] = useState<HabitCompletion[]>([])
   const [reflections, setReflections] = useState<Reflection[]>([])
   const [badges, setBadges] = useState<Badge[]>([])
+  const [sessionFeedbacks, setSessionFeedbacks] = useState<SessionFeedback[]>([])
+  const [mentorSessionNotes, setMentorSessionNotes] = useState<MentorSessionNotes[]>([])
+  const [notifications, setNotifications] = useState<Notification[]>([])
 
   const addSession = (session: Session) => {
     setSessions([...sessions, session])
+    // Create notification for mentor when session is booked
+    if (session.mentorId && currentUser?.id !== session.mentorId) {
+      const notification: Notification = {
+        id: `notif-${Date.now()}`,
+        userId: session.mentorId,
+        title: 'New Session Booked',
+        message: `${session.mentee.name} booked a session with you on ${new Date(session.date).toLocaleDateString()}`,
+        type: 'session-booked',
+        read: false,
+        relatedId: session.id,
+        createdAt: new Date().toISOString()
+      }
+      setNotifications([notification, ...notifications])
+    }
+  }
+
+  const updateSession = (sessionId: string, updates: Partial<Session>) => {
+    setSessions(sessions.map(s => s.id === sessionId ? { ...s, ...updates } : s))
   }
 
   const addEvent = (event: Event) => {
@@ -143,6 +178,161 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setBadges([...badges, badge])
   }
 
+  const addSessionFeedback = (feedback: SessionFeedback) => {
+    setSessionFeedbacks([...sessionFeedbacks, feedback])
+    // Mark session as having feedback submitted
+    setSessions(sessions.map(s => 
+      s.id === feedback.sessionId 
+        ? { ...s, feedbackSubmitted: true, feedbackSubmittedAt: feedback.createdAt }
+        : s
+    ))
+    // Create notification for mentor
+    const notification: Notification = {
+      id: `notif-${Date.now()}`,
+      userId: feedback.mentorId,
+      title: 'New Feedback Received',
+      message: `You received ${feedback.rating}-star feedback from a mentee`,
+      type: 'feedback-received',
+      read: false,
+      relatedId: feedback.sessionId,
+      createdAt: new Date().toISOString()
+    }
+    setNotifications([notification, ...notifications])
+    // In a real app, you'd update the mentor's rating in the database
+  }
+
+  const getMentorFeedbackStats = (mentorId: string): MentorFeedbackStats | null => {
+    const mentorFeedbacks = sessionFeedbacks.filter(f => f.mentorId === mentorId)
+    if (mentorFeedbacks.length === 0) return null
+
+    const averageRating = mentorFeedbacks.reduce((sum, f) => sum + f.rating, 0) / mentorFeedbacks.length
+    const ratingDistribution = {
+      1: mentorFeedbacks.filter(f => f.rating === 1).length,
+      2: mentorFeedbacks.filter(f => f.rating === 2).length,
+      3: mentorFeedbacks.filter(f => f.rating === 3).length,
+      4: mentorFeedbacks.filter(f => f.rating === 4).length,
+      5: mentorFeedbacks.filter(f => f.rating === 5).length,
+    }
+    const recentFeedbacks = mentorFeedbacks
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, 10)
+
+    return {
+      mentorId,
+      averageRating: Math.round(averageRating * 10) / 10,
+      totalFeedbacks: mentorFeedbacks.length,
+      ratingDistribution,
+      recentFeedbacks
+    }
+  }
+
+  const addMentorSessionNotes = (notes: MentorSessionNotes) => {
+    setMentorSessionNotes([...mentorSessionNotes, notes])
+  }
+
+  const updateMentorSessionNotes = (noteId: string, updates: Partial<MentorSessionNotes>) => {
+    setMentorSessionNotes(mentorSessionNotes.map(n => 
+      n.id === noteId 
+        ? { ...n, ...updates, updatedAt: new Date().toISOString() }
+        : n
+    ))
+  }
+
+  const getMentorSessionNotes = (sessionId: string): MentorSessionNotes | null => {
+    return mentorSessionNotes.find(n => n.sessionId === sessionId) || null
+  }
+
+  const addNotification = (notification: Notification) => {
+    setNotifications([notification, ...notifications])
+  }
+
+  const markNotificationAsRead = (notificationId: string) => {
+    setNotifications(notifications.map(n => 
+      n.id === notificationId ? { ...n, read: true } : n
+    ))
+  }
+
+  const getUnreadNotificationCount = (userId: string): number => {
+    return notifications.filter(n => n.userId === userId && !n.read).length
+  }
+
+  const getMentorStats = (mentorId: string): MentorStats | null => {
+    const mentorSessions = sessions.filter(s => s.mentorId === mentorId)
+    const mentorFeedbacks = sessionFeedbacks.filter(f => f.mentorId === mentorId)
+    
+    if (mentorSessions.length === 0) return null
+
+    const averageRating = mentorFeedbacks.length > 0
+      ? mentorFeedbacks.reduce((sum, f) => sum + f.rating, 0) / mentorFeedbacks.length
+      : 0
+
+    // Extract strength keywords from positive feedback
+    const strengthKeywords: string[] = []
+    mentorFeedbacks.forEach(f => {
+      const words = f.whatWentWell.toLowerCase().split(/\s+/)
+      strengthKeywords.push(...words.filter(w => w.length > 4))
+    })
+
+    // Extract improvement keywords
+    const improvementKeywords: string[] = []
+    mentorFeedbacks.forEach(f => {
+      const words = f.whatToImprove.toLowerCase().split(/\s+/)
+      improvementKeywords.push(...words.filter(w => w.length > 4))
+    })
+
+    // Calculate sessions per week (last 4 weeks)
+    const fourWeeksAgo = new Date()
+    fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28)
+    const recentSessions = mentorSessions.filter(s => new Date(s.date) >= fourWeeksAgo)
+    const sessionsPerWeek = recentSessions.length / 4
+
+    const feedbackResponseRate = mentorSessions.length > 0
+      ? (mentorFeedbacks.length / mentorSessions.filter(s => s.status === 'completed').length) * 100
+      : 0
+
+    return {
+      mentorId,
+      averageRating: Math.round(averageRating * 10) / 10,
+      totalSessions: mentorSessions.length,
+      totalFeedbacks: mentorFeedbacks.length,
+      strengthKeywords: [...new Set(strengthKeywords)].slice(0, 10),
+      improvementKeywords: [...new Set(improvementKeywords)].slice(0, 10),
+      sessionsPerWeek: Math.round(sessionsPerWeek * 10) / 10,
+      feedbackResponseRate: Math.round(feedbackResponseRate),
+      lastUpdated: new Date().toISOString()
+    }
+  }
+
+  const getMenteeSummaries = (mentorId: string): MenteeSummary[] => {
+    const mentorSessions = sessions.filter(s => s.mentorId === mentorId)
+    const menteeIds = [...new Set(mentorSessions.map(s => s.menteeId))]
+    
+    return menteeIds.map(menteeId => {
+      const menteeSessions = mentorSessions.filter(s => s.menteeId === menteeId)
+      const completedSessions = menteeSessions.filter(s => s.status === 'completed')
+      const menteeFeedbacks = sessionFeedbacks.filter(f => f.menteeId === menteeId && f.mentorId === mentorId)
+      
+      const averageRating = menteeFeedbacks.length > 0
+        ? menteeFeedbacks.reduce((sum, f) => sum + f.rating, 0) / menteeFeedbacks.length
+        : 0
+
+      const lastSession = completedSessions.sort((a, b) => 
+        new Date(b.date).getTime() - new Date(a.date).getTime()
+      )[0]
+
+      const mentee = menteeSessions[0]?.mentee
+
+      return {
+        menteeId,
+        mentee: mentee || { id: menteeId, name: 'Unknown', email: '', role: 'mentee', avatar: '', bio: '', location: '', skills: [], membershipTier: 'standard', verified: false, createdAt: '' },
+        totalSessions: menteeSessions.length,
+        completedSessions: completedSessions.length,
+        averageRating: Math.round(averageRating * 10) / 10,
+        lastSessionDate: lastSession?.date
+      }
+    })
+  }
+
   return (
     <AppContext.Provider value={{
       currentUser,
@@ -156,7 +346,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       habitCompletions,
       reflections,
       badges,
+      sessionFeedbacks,
+      mentorSessionNotes,
+      notifications,
       addSession,
+      updateSession,
       addEvent,
       addRating,
       addGoal,
@@ -165,7 +359,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
       updateHabit,
       toggleHabitCompletion,
       addReflection,
-      addBadge
+      addBadge,
+      addSessionFeedback,
+      getMentorFeedbackStats,
+      addMentorSessionNotes,
+      updateMentorSessionNotes,
+      getMentorSessionNotes,
+      addNotification,
+      markNotificationAsRead,
+      getUnreadNotificationCount,
+      getMentorStats,
+      getMenteeSummaries
     }}>
       {children}
     </AppContext.Provider>

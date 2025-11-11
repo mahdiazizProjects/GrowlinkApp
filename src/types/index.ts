@@ -45,6 +45,9 @@ export interface Session {
   topic: string;
   rating?: number;
   review?: string;
+  feedbackEligible?: boolean; // true when session is completed
+  feedbackSubmitted?: boolean; // true when feedback has been submitted
+  feedbackSubmittedAt?: string; // timestamp when feedback was submitted
 }
 
 export interface Event {
@@ -163,6 +166,83 @@ export interface HabitProgress {
   totalCompletions: number;
   totalDays: number;
   streak: Streak;
+}
+
+// Post-Session Mentor Feedback Types
+export interface SessionFeedback {
+  id: string;
+  sessionId: string;
+  menteeId: string;
+  mentorId: string;
+  rating: number; // 1-5 stars
+  growthArea: string; // Required: "What is one area where you'd like the mentor to help you grow?"
+  growthIdea: string; // Required: "What idea do you have for how the mentor can support your growth in that area?"
+  whatWentWell: string; // Required: "What did the mentor do well in this session?"
+  whatToImprove: string; // Required: "What could be improved for next time?"
+  additionalComments?: string; // Optional: Additional feedback
+  isAnonymous?: boolean; // Whether mentee name is shown to mentor
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MentorFeedbackStats {
+  mentorId: string;
+  averageRating: number;
+  totalFeedbacks: number;
+  ratingDistribution: {
+    1: number;
+    2: number;
+    3: number;
+    4: number;
+    5: number;
+  };
+  recentFeedbacks: SessionFeedback[];
+}
+
+// Mentor Dashboard & Session Management Types
+export interface MentorSessionNotes {
+  id: string;
+  sessionId: string;
+  mentorId: string;
+  summary: string; // What was discussed
+  followUps: string; // Follow-up action items
+  growthFocus?: string; // Growth focus for mentee
+  privateNotes?: string; // Private reflection
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Notification {
+  id: string;
+  userId: string;
+  title: string;
+  message: string;
+  type: 'session-booked' | 'session-upcoming' | 'feedback-received' | 'badge-earned' | 'admin-update';
+  read: boolean;
+  relatedId?: string; // ID of related session, feedback, etc.
+  createdAt: string;
+}
+
+export interface MentorStats {
+  mentorId: string;
+  averageRating: number;
+  totalSessions: number;
+  totalFeedbacks: number;
+  strengthKeywords: string[]; // Extracted from positive feedback
+  improvementKeywords: string[]; // Extracted from improvement suggestions
+  sessionsPerWeek: number;
+  feedbackResponseRate: number; // % of sessions with feedback
+  lastUpdated: string;
+}
+
+export interface MenteeSummary {
+  menteeId: string;
+  mentee: User;
+  totalSessions: number;
+  completedSessions: number;
+  averageRating: number;
+  lastSessionDate?: string;
+  mentorNotes?: string; // Private notes from mentor
 }
 
 

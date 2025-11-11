@@ -90,6 +90,20 @@ npm run dev
 
 3. Open your browser and navigate to `http://localhost:5173`
 
+### Sign In as Mentor (Demo)
+
+To test the mentor dashboard features:
+
+1. Navigate to `http://localhost:5173/dashboard`
+2. Click **"Sign In as Mentor (Demo)"** button
+3. You'll be logged in as Sarah Chen (mentor account)
+4. Explore the mentor dashboard with three tabs:
+   - **Dashboard**: Overview, sessions, and feedback
+   - **My Mentees**: List of all mentees
+   - **Analytics**: Performance metrics and insights
+
+See [MENTOR_LOGIN_GUIDE.md](./MENTOR_LOGIN_GUIDE.md) for detailed instructions.
+
 ### Build for Production
 
 ```bash

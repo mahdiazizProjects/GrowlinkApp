@@ -13,6 +13,7 @@ import BookSession from './pages/BookSession'
 import Goals from './pages/Goals'
 import Habits from './pages/Habits'
 import Reflections from './pages/Reflections'
+import BecomeMentor from './pages/BecomeMentor'
 
 function App() {
   return (
@@ -33,6 +34,7 @@ function App() {
               <Route path="/goals" element={<Goals />} />
               <Route path="/habits" element={<Habits />} />
               <Route path="/reflections" element={<Reflections />} />
+              <Route path="/become-mentor" element={<BecomeMentor />} />
             </Routes>
           </main>
           <Footer />
