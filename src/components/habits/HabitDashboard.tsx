@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { Check, X, TrendingUp, Flame, Target } from 'lucide-react'
 import { Habit, HabitCompletion } from '../../types'
 import ProgressRingChart from './ProgressRingChart'
-import { format, isToday, parseISO, startOfWeek, endOfWeek, eachDayOfInterval } from 'date-fns'
+import { format, isToday, parseISO, startOfWeek, endOfWeek } from 'date-fns'
 
 interface HabitDashboardProps {
   habits: Habit[]
@@ -11,7 +11,7 @@ interface HabitDashboardProps {
 }
 
 export default function HabitDashboard({ habits, completions, onToggleCompletion }: HabitDashboardProps) {
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
+  const [selectedDate] = useState(new Date().toISOString().split('T')[0])
   
   const activeHabits = habits.filter(h => h.status === 'active')
   const today = new Date().toISOString().split('T')[0]
@@ -22,7 +22,6 @@ export default function HabitDashboard({ habits, completions, onToggleCompletion
       const habitCompletions = completions.filter(c => c.habitId === habit.id && c.completed)
       const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 })
       const weekEnd = endOfWeek(new Date(), { weekStartsOn: 1 })
-      const weekDays = eachDayOfInterval({ start: weekStart, end: weekEnd })
       
       const weekCompletions = habitCompletions.filter(c => {
         const completionDate = parseISO(c.date)

@@ -1,4 +1,4 @@
-import { Bell, X, CheckCircle, Calendar, MessageSquare, Award, AlertCircle } from 'lucide-react'
+import { Bell, X, Calendar, MessageSquare, Award, AlertCircle } from 'lucide-react'
 import { Notification } from '../../types'
 import { format } from 'date-fns'
 import { useState } from 'react'

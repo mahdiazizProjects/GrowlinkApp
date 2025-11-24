@@ -1,4 +1,4 @@
-import { X, LogOut, Edit, Mail, MapPin, Briefcase, Award, Calendar } from 'lucide-react'
+import { X, LogOut, Edit, Mail, MapPin, Briefcase, Calendar } from 'lucide-react'
 import { User } from '../../types'
 import { format } from 'date-fns'
 

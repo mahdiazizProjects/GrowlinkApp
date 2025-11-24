@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
-import { Users, Calendar, Star, MessageSquare, Clock, TrendingUp, CheckCircle } from 'lucide-react'
+import { Users, Calendar, Star, MessageSquare, Clock } from 'lucide-react'
 import { Session, SessionFeedback, User } from '../../types'
-import { format, isToday, parseISO, startOfDay, endOfDay } from 'date-fns'
+import { format, parseISO } from 'date-fns'
 
 interface EnhancedMentorDashboardProps {
   mentorId: string

@@ -7,7 +7,7 @@ interface MentorFeedbackViewProps {
   allFeedbacks: SessionFeedback[]
 }
 
-export default function MentorFeedbackView({ feedbackStats, allFeedbacks }: MentorFeedbackViewProps) {
+export default function MentorFeedbackView({ feedbackStats }: MentorFeedbackViewProps) {
   if (!feedbackStats || feedbackStats.totalFeedbacks === 0) {
     return (
       <div className="bg-white rounded-xl shadow-lg p-6">

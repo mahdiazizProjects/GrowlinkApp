@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { BookOpen, Send, Sparkles, MessageSquare } from 'lucide-react'
 import { Reflection, Goal } from '../../types'
-import { format, startOfWeek, endOfWeek } from 'date-fns'
+import { format, startOfWeek } from 'date-fns'
 
 interface ReflectionJournalProps {
   reflections: Reflection[]

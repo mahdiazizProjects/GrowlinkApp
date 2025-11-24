@@ -23,3 +23,10 @@ dist-ssr
 *.sln
 *.sw?
 
+# AWS Amplify
+amplify/
+.amplifyrc
+amplify.config.js
+amplify_outputs.json
+aws-exports.js
+

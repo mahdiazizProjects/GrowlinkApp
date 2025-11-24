@@ -1,4 +1,4 @@
-import { X, Calendar, Clock, MapPin, Video, User, DollarSign, MessageSquare } from 'lucide-react'
+import { X, Calendar, Clock, MapPin, Video, DollarSign } from 'lucide-react'
 import { Session } from '../../types'
 import { format } from 'date-fns'
 import FeedbackPrompt from '../feedback/FeedbackPrompt'
@@ -17,7 +17,6 @@ export default function SessionDetailModal({
   currentUserId 
 }: SessionDetailModalProps) {
   const isMentee = session.menteeId === currentUserId
-  const isMentor = session.mentorId === currentUserId
   const sessionDate = new Date(`${session.date}T${session.time}`)
   const endTime = new Date(sessionDate.getTime() + session.duration * 60000)
 

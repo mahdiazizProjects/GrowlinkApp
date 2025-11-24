@@ -1,10 +1,9 @@
 import { useState } from 'react'
-import { Plus, Target, CheckCircle, Clock, Edit, Trash2 } from 'lucide-react'
+import { Plus, Target, CheckCircle, Clock, Edit } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import IdentityBuilderModal from '../components/habits/IdentityBuilderModal'
 import ActionPlanBuilder from '../components/habits/ActionPlanBuilder'
 import { Goal, Habit } from '../types'
-import { format } from 'date-fns'
 
 export default function Goals() {
   const { currentUser, goals, habits, addGoal, updateGoal, addHabit } = useApp()

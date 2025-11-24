@@ -1,6 +1,6 @@
 import { Star, TrendingUp, MessageSquare, Target, Award } from 'lucide-react'
 import { MentorStats, SessionFeedback } from '../../types'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 
 interface MentorAnalyticsProps {
   stats: MentorStats | null

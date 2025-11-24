@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { X, Save, Calendar, Clock, User, Star, MessageSquare, FileText } from 'lucide-react'
+import { X, Save, Calendar, User, Star, MessageSquare, FileText } from 'lucide-react'
 import { Session, SessionFeedback, MentorSessionNotes } from '../../types'
 import { format } from 'date-fns'
 

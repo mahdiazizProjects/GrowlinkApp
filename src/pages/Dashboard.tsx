@@ -1,9 +1,8 @@
 import { useState, useMemo } from 'react'
-import { Calendar, Video, MapPin, Star, TrendingUp, Target, CheckCircle, BookOpen, ArrowRight, MessageSquare, User, Award } from 'lucide-react'
+import { Calendar, Video, MapPin, TrendingUp, Target, CheckCircle, BookOpen, ArrowRight, MessageSquare, User, Award } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import { Link } from 'react-router-dom'
 import ProgressRingChart from '../components/habits/ProgressRingChart'
-import MentorDashboard from '../components/habits/MentorDashboard'
 import FeedbackPrompt from '../components/feedback/FeedbackPrompt'
 import SessionFeedbackForm from '../components/feedback/SessionFeedbackForm'
 import MentorFeedbackView from '../components/feedback/MentorFeedbackView'
@@ -26,22 +25,18 @@ export default function Dashboard() {
     goals, 
     habits, 
     habitCompletions, 
-    reflections, 
     sessionFeedbacks, 
-    mentorSessionNotes,
     notifications,
     addSessionFeedback, 
     getMentorFeedbackStats,
     addMentorSessionNotes,
     updateMentorSessionNotes,
     getMentorSessionNotes,
-    addNotification,
     markNotificationAsRead,
     getUnreadNotificationCount,
     getMentorStats,
     getMenteeSummaries
   } = useApp()
-  const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [selectedSessionForFeedback, setSelectedSessionForFeedback] = useState<Session | null>(null)
   const [selectedSessionForDetail, setSelectedSessionForDetail] = useState<Session | null>(null)
   const [selectedMentorSession, setSelectedMentorSession] = useState<Session | null>(null)
@@ -70,7 +65,6 @@ export default function Dashboard() {
         createdAt: '2024-01-01'
       })
     }
-    setIsLoggedIn(true)
   }
 
   // Calculate habit stats - must be called before any conditional returns (Rules of Hooks)
