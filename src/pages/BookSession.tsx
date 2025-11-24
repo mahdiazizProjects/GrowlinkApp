@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Calendar, Video, MapPin, Clock, CheckCircle } from 'lucide-react'
+import { Calendar, Video, MapPin, Clock, CheckCircle, Zap } from 'lucide-react'
 import { mockMentors } from '../data/mockData'
 import { useApp } from '../context/AppContext'
 
@@ -33,6 +33,126 @@ export default function BookSession() {
   const inPersonPrice = 50
   const price = sessionType === 'in-person' ? inPersonPrice : virtualPrice
   const discount = sessionType === 'in-person' ? virtualPrice - inPersonPrice : 0
+
+  // Generate 15-minute time slots
+  const generateTimeSlots = (selectedDate: string): string[] => {
+    const slots: string[] = []
+    const today = new Date()
+    const selected = selectedDate ? new Date(selectedDate + 'T00:00:00') : null
+    const isToday = selected && selected.toDateString() === today.toDateString()
+    
+    // Start time: if today, start from next 15-minute interval after current time, otherwise 9:00 AM
+    let startHour = 9
+    let startMinute = 0
+    
+    if (isToday) {
+      const now = new Date()
+      startHour = now.getHours()
+      startMinute = Math.ceil(now.getMinutes() / 15) * 15
+      if (startMinute >= 60) {
+        startHour += 1
+        startMinute = 0
+      }
+      // If it's too late (after 8 PM), start from tomorrow 9 AM
+      if (startHour >= 20) {
+        return []
+      }
+    }
+    
+    // Generate slots from start time to 8:00 PM (20:00)
+    for (let hour = startHour; hour < 20; hour++) {
+      const minStart = hour === startHour ? startMinute : 0
+      for (let minute = minStart; minute < 60; minute += 15) {
+        const timeString = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`
+        slots.push(timeString)
+      }
+    }
+    
+    return slots
+  }
+
+  const timeSlots = useMemo(() => generateTimeSlots(date), [date])
+
+  // Handle "Book Now" - complete the entire booking process immediately
+  const handleBookNow = () => {
+    if (!currentUser) {
+      alert('Please sign in to book a session')
+      return
+    }
+
+    const now = new Date()
+    const today = new Date().toISOString().split('T')[0]
+    
+    // Calculate next 15-minute slot
+    const nextSlot = Math.ceil(now.getMinutes() / 15) * 15
+    let nextHour = now.getHours()
+    let nextMin = nextSlot
+    
+    if (nextMin >= 60) {
+      nextHour += 1
+      nextMin = 0
+    }
+    
+    let bookingDate = today
+    let bookingTime = ''
+    
+    // If it's after 8 PM, set to tomorrow 9 AM
+    if (nextHour >= 20) {
+      const tomorrow = new Date()
+      tomorrow.setDate(tomorrow.getDate() + 1)
+      bookingDate = tomorrow.toISOString().split('T')[0]
+      bookingTime = '09:00'
+    } else {
+      bookingTime = `${nextHour.toString().padStart(2, '0')}:${nextMin.toString().padStart(2, '0')}`
+    }
+
+    // Generate slots to validate the time
+    const slots = generateTimeSlots(bookingDate)
+    const validTime = slots.length > 0 && slots.includes(bookingTime) 
+      ? bookingTime 
+      : slots.length > 0 
+        ? slots[0] 
+        : '09:00'
+
+    // For in-person sessions, auto-select first venue if available
+    let finalVenueId = selectedVenue
+    if (sessionType === 'in-person' && !finalVenueId && venues.length > 0) {
+      finalVenueId = venues[0].id
+    }
+
+    // Check if we have all required fields
+    if (!topic) {
+      // If no topic, prompt user or use a default
+      const defaultTopic = `Quick session with ${mentor.name}`
+      const userTopic = prompt(`What would you like to discuss? (Leave empty for "${defaultTopic}")`)
+      if (userTopic === null) {
+        return // User cancelled
+      }
+      setTopic(userTopic || defaultTopic)
+    }
+
+    // Create the session
+    const newSession = {
+      id: `session-${Date.now()}`,
+      mentorId: mentor.id,
+      menteeId: currentUser.id,
+      mentor,
+      mentee: currentUser,
+      type: sessionType,
+      venueId: sessionType === 'in-person' ? finalVenueId : undefined,
+      venue: sessionType === 'in-person' ? venues.find(v => v.id === finalVenueId) : undefined,
+      date: bookingDate,
+      time: validTime,
+      duration: 60,
+      status: 'pending' as const,
+      price,
+      topic: topic || `Quick session with ${mentor.name}`
+    }
+
+    addSession(newSession)
+    alert('Session booked successfully!')
+    navigate('/dashboard')
+  }
 
   const handleBooking = () => {
     if (!date || !time || !topic) {
@@ -159,7 +279,10 @@ export default function BookSession() {
 
             {/* Date & Time */}
             <div className="bg-white rounded-xl shadow-lg p-6">
-              <h2 className="text-xl font-semibold text-gray-900 mb-4">Date & Time</h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold text-gray-900">Date & Time</h2>
+              </div>
+              
               <div className="grid md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -169,7 +292,13 @@ export default function BookSession() {
                   <input
                     type="date"
                     value={date}
-                    onChange={(e) => setDate(e.target.value)}
+                    onChange={(e) => {
+                      setDate(e.target.value)
+                      // Reset time when date changes to ensure valid slot
+                      if (time && timeSlots.length > 0 && !timeSlots.includes(time)) {
+                        setTime(timeSlots[0])
+                      }
+                    }}
                     min={new Date().toISOString().split('T')[0]}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                   />
@@ -177,16 +306,39 @@ export default function BookSession() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     <Clock className="inline mr-2" size={18} />
-                    Time
+                    Time (15-min intervals)
                   </label>
-                  <input
-                    type="time"
-                    value={time}
-                    onChange={(e) => setTime(e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                  />
+                  {timeSlots.length === 0 ? (
+                    <div className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 text-sm">
+                      No available slots for this date
+                    </div>
+                  ) : (
+                    <select
+                      value={time}
+                      onChange={(e) => setTime(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    >
+                      <option value="">Select a time</option>
+                      {timeSlots.map((slot) => {
+                        const [hours, minutes] = slot.split(':')
+                        const hour12 = parseInt(hours) % 12 || 12
+                        const ampm = parseInt(hours) >= 12 ? 'PM' : 'AM'
+                        const displayTime = `${hour12}:${minutes} ${ampm}`
+                        return (
+                          <option key={slot} value={slot}>
+                            {displayTime}
+                          </option>
+                        )
+                      })}
+                    </select>
+                  )}
                 </div>
               </div>
+              {date && timeSlots.length > 0 && (
+                <p className="text-xs text-gray-500 mt-2">
+                  💡 Sessions are scheduled in 15-minute intervals (e.g., 10:00, 10:15, 10:30, 10:45)
+                </p>
+              )}
             </div>
 
             {/* Topic */}
@@ -240,12 +392,21 @@ export default function BookSession() {
                 </div>
               )}
 
-              <button
-                onClick={handleBooking}
-                className="w-full px-6 py-3 bg-primary-600 text-white rounded-lg font-semibold hover:bg-primary-700 transition-colors"
-              >
-                Confirm Booking
-              </button>
+              <div className="space-y-3">
+                <button
+                  onClick={handleBookNow}
+                  className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-primary-600 to-primary-700 text-white rounded-lg font-semibold hover:from-primary-700 hover:to-primary-800 transition-all shadow-md hover:shadow-lg"
+                >
+                  <Zap size={20} />
+                  Book Now
+                </button>
+                <button
+                  onClick={handleBooking}
+                  className="w-full px-6 py-3 bg-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-300 transition-colors"
+                >
+                  Schedule for Later
+                </button>
+              </div>
             </div>
           </div>
         </div>

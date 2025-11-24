@@ -84,7 +84,7 @@ export const mockEvents: Event[] = [
     isVirtual: false,
     price: 0,
     tags: ['Design', 'Networking', 'Casual'],
-    image: 'https://images.unsplash.com/photo-1511920170033-83939d329638?w=800'
+    image: 'https://images.unsplash.com/photo-1511578314322-379afb476865?w=800'
   },
   {
     id: '2',
@@ -101,7 +101,8 @@ export const mockEvents: Event[] = [
     attendees: ['1', '2'],
     isVirtual: false,
     price: 25,
-    tags: ['Career', 'Workshop', 'Professional Development']
+    tags: ['Career', 'Workshop', 'Professional Development'],
+    image: 'https://images.unsplash.com/photo-1497366216548-37526070297c?w=800'
   }
 ]
 
