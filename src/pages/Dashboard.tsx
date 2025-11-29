@@ -18,16 +18,16 @@ import { startOfWeek, endOfWeek, eachDayOfInterval, parseISO } from 'date-fns'
 import { Session, SessionFeedback, MentorSessionNotes, MenteeSummary } from '../types'
 
 export default function Dashboard() {
-  const { 
-    currentUser, 
-    setCurrentUser, 
-    sessions, 
-    goals, 
-    habits, 
-    habitCompletions, 
-    sessionFeedbacks, 
+  const {
+    currentUser,
+    setCurrentUser,
+    sessions,
+    goals,
+    habits,
+    habitCompletions,
+    sessionFeedbacks,
     notifications,
-    addSessionFeedback, 
+    addSessionFeedback,
     getMentorFeedbackStats,
     addMentorSessionNotes,
     updateMentorSessionNotes,
@@ -53,6 +53,7 @@ export default function Dashboard() {
     } else {
       setCurrentUser({
         id: 'user-1',
+        username: 'alexjohnson',
         name: 'Alex Johnson',
         email: 'alex@example.com',
         role: 'mentee',
@@ -70,30 +71,30 @@ export default function Dashboard() {
   // Calculate habit stats - must be called before any conditional returns (Rules of Hooks)
   const habitStats = useMemo(() => {
     if (!currentUser) return { completionRate: 0, todayCompletions: 0, totalCompletions: 0 }
-    
+
     const activeGoals = goals.filter(g => g.userId === currentUser.id && g.status === 'active')
     const activeHabits = habits.filter(h => h.status === 'active' && activeGoals.some(g => g.id === h.goalId))
-    
+
     if (activeHabits.length === 0) return { completionRate: 0, todayCompletions: 0, totalCompletions: 0 }
-    
+
     const today = new Date().toISOString().split('T')[0]
     const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 })
     const weekEnd = endOfWeek(new Date(), { weekStartsOn: 1 })
     const weekDays = eachDayOfInterval({ start: weekStart, end: weekEnd })
-    
+
     const todayCompletions = habitCompletions.filter(
       c => c.userId === currentUser.id && c.date === today && c.completed
     ).length
-    
+
     const weekCompletions = habitCompletions.filter(c => {
       if (c.userId !== currentUser.id || !c.completed) return false
       const completionDate = parseISO(c.date)
       return completionDate >= weekStart && completionDate <= weekEnd
     }).length
-    
+
     const totalDays = activeHabits.length * (weekDays.length)
     const completionRate = totalDays > 0 ? (weekCompletions / totalDays) * 100 : 0
-    
+
     return {
       completionRate,
       todayCompletions,
@@ -112,7 +113,7 @@ export default function Dashboard() {
               Sign in to access your dashboard, manage sessions, and connect with the community.
             </p>
           </div>
-          
+
           <div className="space-y-3">
             <button
               onClick={() => handleLogin('mentee')}
@@ -203,31 +204,28 @@ export default function Dashboard() {
           <div className="mb-6 flex gap-2 border-b border-gray-200">
             <button
               onClick={() => setActiveMentorTab('dashboard')}
-              className={`px-4 py-2 font-semibold transition-colors ${
-                activeMentorTab === 'dashboard'
-                  ? 'text-primary-600 border-b-2 border-primary-600'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
+              className={`px-4 py-2 font-semibold transition-colors ${activeMentorTab === 'dashboard'
+                ? 'text-primary-600 border-b-2 border-primary-600'
+                : 'text-gray-600 hover:text-gray-900'
+                }`}
             >
               Dashboard
             </button>
             <button
               onClick={() => setActiveMentorTab('mentees')}
-              className={`px-4 py-2 font-semibold transition-colors ${
-                activeMentorTab === 'mentees'
-                  ? 'text-primary-600 border-b-2 border-primary-600'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
+              className={`px-4 py-2 font-semibold transition-colors ${activeMentorTab === 'mentees'
+                ? 'text-primary-600 border-b-2 border-primary-600'
+                : 'text-gray-600 hover:text-gray-900'
+                }`}
             >
               My Mentees
             </button>
             <button
               onClick={() => setActiveMentorTab('analytics')}
-              className={`px-4 py-2 font-semibold transition-colors ${
-                activeMentorTab === 'analytics'
-                  ? 'text-primary-600 border-b-2 border-primary-600'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
+              className={`px-4 py-2 font-semibold transition-colors ${activeMentorTab === 'analytics'
+                ? 'text-primary-600 border-b-2 border-primary-600'
+                : 'text-gray-600 hover:text-gray-900'
+                }`}
             >
               Analytics
             </button>
@@ -387,12 +385,12 @@ export default function Dashboard() {
 
         {/* Completed Sessions with Feedback Prompts */}
         {(() => {
-          const completedSessions = sessions.filter(s => 
-            s.status === 'completed' && 
+          const completedSessions = sessions.filter(s =>
+            s.status === 'completed' &&
             s.menteeId === user.id &&
             (!s.feedbackEligible || s.feedbackEligible === true)
           )
-          
+
           if (completedSessions.length > 0) {
             return (
               <div className="mb-6">
@@ -405,11 +403,11 @@ export default function Dashboard() {
                     <div key={session.id} className="bg-white rounded-xl shadow-lg p-6">
                       <div className="flex items-center justify-between mb-4">
                         <div className="flex-1">
-                          <h3 
+                          <h3
                             className="text-lg font-semibold text-gray-900 hover:text-primary-600 cursor-pointer"
                             onClick={() => setSelectedSessionForDetail(session)}
                           >
-                            {session.mentor.name}
+                            {session.mentor?.name}
                           </h3>
                           <p className="text-sm text-gray-600">
                             {new Date(session.date).toLocaleDateString()} at {session.time} • {session.topic}
@@ -444,8 +442,8 @@ export default function Dashboard() {
                 sessions
                   .filter(s => s.status === 'confirmed' || s.status === 'pending')
                   .map((session) => (
-                    <div 
-                      key={session.id} 
+                    <div
+                      key={session.id}
                       onClick={() => setSelectedSessionForDetail(session)}
                       className="border border-gray-200 rounded-lg p-4 hover:border-primary-300 hover:bg-primary-50 cursor-pointer transition-all"
                     >
@@ -479,13 +477,12 @@ export default function Dashboard() {
           {/* Membership Status */}
           <div className="bg-white rounded-xl shadow-lg p-6">
             <h2 className="text-2xl font-semibold text-gray-900 mb-4">Membership</h2>
-            <div className={`p-6 rounded-lg mb-4 ${
-              user.membershipTier === 'exclusive'
+            <div className={`p-6 rounded-lg mb-4 ${user.membershipTier === 'exclusive'
                 ? 'bg-gradient-to-br from-gold-50 to-gold-100 border-2 border-gold-300'
                 : user.membershipTier === 'premium'
-                ? 'bg-primary-50 border-2 border-primary-300'
-                : 'bg-gray-50 border-2 border-gray-300'
-            }`}>
+                  ? 'bg-primary-50 border-2 border-primary-300'
+                  : 'bg-gray-50 border-2 border-gray-300'
+              }`}>
               <div className="flex items-center justify-between mb-2">
                 <span className="text-lg font-semibold text-gray-900 capitalize">
                   {user.membershipTier} Member
@@ -498,8 +495,8 @@ export default function Dashboard() {
                 {user.membershipTier === 'exclusive'
                   ? 'You have access to all exclusive features and priority booking.'
                   : user.membershipTier === 'premium'
-                  ? 'You have access to premium features and early event registration.'
-                  : 'Upgrade to unlock more features and exclusive access.'}
+                    ? 'You have access to premium features and early event registration.'
+                    : 'Upgrade to unlock more features and exclusive access.'}
               </p>
               {user.membershipTier !== 'exclusive' && (
                 <button className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-semibold hover:bg-primary-700 transition-colors">
@@ -602,4 +599,3 @@ function StatCard({ icon, label, value, color }: { icon: React.ReactNode; label:
     </div>
   )
 }
-

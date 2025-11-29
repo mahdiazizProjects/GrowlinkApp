@@ -12,33 +12,33 @@ interface MentorDashboardProps {
   reflections: Reflection[]
 }
 
-export default function MentorDashboard({ 
-  mentees, 
-  goals, 
-  habits, 
-  habitCompletions, 
-  reflections 
+export default function MentorDashboard({
+  mentees,
+  goals,
+  habits,
+  habitCompletions,
+  reflections
 }: MentorDashboardProps) {
   const menteeStats = useMemo(() => {
     return mentees.map(mentee => {
       const menteeGoals = goals.filter(g => g.userId === mentee.id && g.status === 'active')
       const menteeHabits = habits.filter(h => menteeGoals.some(g => g.id === h.goalId))
       const menteeCompletions = habitCompletions.filter(c => c.userId === mentee.id && c.completed)
-      
+
       const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 })
       const weekEnd = endOfWeek(new Date(), { weekStartsOn: 1 })
-      
+
       const weekCompletions = menteeCompletions.filter(c => {
         const completionDate = parseISO(c.date)
         return completionDate >= weekStart && completionDate <= weekEnd
       }).length
-      
+
       const totalDays = menteeHabits.length * 7
       const completionRate = totalDays > 0 ? (weekCompletions / totalDays) * 100 : 0
-      
+
       const menteeReflections = reflections.filter(r => r.userId === mentee.id)
       const recentReflections = menteeReflections.slice(-3)
-      
+
       return {
         mentee,
         goals: menteeGoals.length,
@@ -69,6 +69,12 @@ export default function MentorDashboard({
       pendingReflections
     }
   }, [mentees, goals, habits, reflections, menteeStats])
+
+  const getReflectionContent = (reflection: Reflection) => {
+    if (!reflection.content) return 'No content'
+    if (typeof reflection.content === 'string') return reflection.content
+    return reflection.content.whatWentWell || reflection.content.insights || 'No content'
+  }
 
   return (
     <div className="space-y-6">
@@ -135,7 +141,7 @@ export default function MentorDashboard({
                     <ProgressRingChart progress={completionRate} size={60} />
                   </div>
                 </div>
-                
+
                 <div className="grid md:grid-cols-4 gap-4 mb-4">
                   <div>
                     <p className="text-sm text-gray-600">Goals</p>
@@ -162,7 +168,7 @@ export default function MentorDashboard({
                       {recentReflections.map(reflection => (
                         <div key={reflection.id} className="bg-gray-50 rounded-lg p-3">
                           <p className="text-sm text-gray-700 line-clamp-2">
-                            {reflection.content.whatWentWell || reflection.content.insights || 'No content'}
+                            {getReflectionContent(reflection)}
                           </p>
                           {!reflection.mentorFeedback && (
                             <button className="mt-2 text-xs text-primary-600 hover:text-primary-700 font-semibold">
@@ -184,14 +190,13 @@ export default function MentorDashboard({
       <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-6 border-2 border-blue-200">
         <h3 className="text-lg font-semibold text-gray-900 mb-3">💡 AI Insights</h3>
         <p className="text-gray-700">
-          {overallStats.avgCompletionRate > 70 
+          {overallStats.avgCompletionRate > 70
             ? "Great progress! Your mentees are maintaining strong consistency. Consider suggesting new challenges."
             : overallStats.avgCompletionRate > 40
-            ? "Good momentum! Some mentees may benefit from habit adjustments or additional support."
-            : "Early stage. Focus on building foundational habits and providing encouragement."}
+              ? "Good momentum! Some mentees may benefit from habit adjustments or additional support."
+              : "Early stage. Focus on building foundational habits and providing encouragement."}
         </p>
       </div>
     </div>
   )
 }
-

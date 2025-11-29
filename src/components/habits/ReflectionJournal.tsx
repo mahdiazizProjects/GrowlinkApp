@@ -27,6 +27,9 @@ export default function ReflectionJournal({ reflections, goals, onSubmit, curren
       userId: currentUserId,
       goalId: selectedGoalId || undefined,
       week: currentWeek,
+      date: new Date().toISOString(),
+      mood: 'GOOD', // Default mood as it's required
+      isShared: true, // Default to shared
       content: {
         whatWentWell: whatWentWell || undefined,
         whatFeltHard: whatFeltHard || undefined,
@@ -43,6 +46,61 @@ export default function ReflectionJournal({ reflections, goals, onSubmit, curren
   }
 
   const activeGoals = goals.filter(g => g.status === 'active')
+
+  const renderContent = () => {
+    if (!existingReflection?.content) return null
+
+    if (typeof existingReflection.content === 'string') {
+      return (
+        <div className="mb-4">
+          <p className="text-gray-700">{existingReflection.content}</p>
+        </div>
+      )
+    }
+
+    return (
+      <>
+        {existingReflection.content.whatWentWell && (
+          <div className="mb-4">
+            <h4 className="text-sm font-semibold text-gray-700 mb-2">✅ What Went Well:</h4>
+            <p className="text-gray-700">{existingReflection.content.whatWentWell}</p>
+          </div>
+        )}
+
+        {existingReflection.content.whatFeltHard && (
+          <div className="mb-4">
+            <h4 className="text-sm font-semibold text-gray-700 mb-2">💪 What Felt Hard:</h4>
+            <p className="text-gray-700">{existingReflection.content.whatFeltHard}</p>
+          </div>
+        )}
+
+        {existingReflection.content.insights && (
+          <div className="mb-4">
+            <h4 className="text-sm font-semibold text-gray-700 mb-2">💡 Insights:</h4>
+            <p className="text-gray-700">{existingReflection.content.insights}</p>
+          </div>
+        )}
+      </>
+    )
+  }
+
+  const renderFeedback = () => {
+    if (!existingReflection?.mentorFeedback) return null
+
+    const feedbackText = typeof existingReflection.mentorFeedback === 'string'
+      ? existingReflection.mentorFeedback
+      : existingReflection.mentorFeedback.feedback
+
+    return (
+      <div className="mt-4 pt-4 border-t border-purple-200">
+        <div className="flex items-center gap-2 mb-2">
+          <MessageSquare className="text-primary-600" size={16} />
+          <span className="text-sm font-semibold text-gray-700">Mentor Feedback:</span>
+        </div>
+        <p className="text-gray-700">{feedbackText}</p>
+      </div>
+    )
+  }
 
   return (
     <div className="bg-white rounded-xl shadow-lg p-6">
@@ -73,37 +131,9 @@ export default function ReflectionJournal({ reflections, goals, onSubmit, curren
               <Sparkles className="text-purple-600" size={18} />
               <span className="font-semibold text-purple-900">This Week's Reflection</span>
             </div>
-            
-            {existingReflection.content.whatWentWell && (
-              <div className="mb-4">
-                <h4 className="text-sm font-semibold text-gray-700 mb-2">✅ What Went Well:</h4>
-                <p className="text-gray-700">{existingReflection.content.whatWentWell}</p>
-              </div>
-            )}
-            
-            {existingReflection.content.whatFeltHard && (
-              <div className="mb-4">
-                <h4 className="text-sm font-semibold text-gray-700 mb-2">💪 What Felt Hard:</h4>
-                <p className="text-gray-700">{existingReflection.content.whatFeltHard}</p>
-              </div>
-            )}
-            
-            {existingReflection.content.insights && (
-              <div className="mb-4">
-                <h4 className="text-sm font-semibold text-gray-700 mb-2">💡 Insights:</h4>
-                <p className="text-gray-700">{existingReflection.content.insights}</p>
-              </div>
-            )}
 
-            {existingReflection.mentorFeedback && (
-              <div className="mt-4 pt-4 border-t border-purple-200">
-                <div className="flex items-center gap-2 mb-2">
-                  <MessageSquare className="text-primary-600" size={16} />
-                  <span className="text-sm font-semibold text-gray-700">Mentor Feedback:</span>
-                </div>
-                <p className="text-gray-700">{existingReflection.mentorFeedback.feedback}</p>
-              </div>
-            )}
+            {renderContent()}
+            {renderFeedback()}
 
             {existingReflection.aiInsights && (
               <div className="mt-4 pt-4 border-t border-purple-200">
@@ -214,9 +244,14 @@ export default function ReflectionJournal({ reflections, goals, onSubmit, curren
                       {format(new Date(reflection.createdAt), 'MMM d, yyyy')}
                     </span>
                   </div>
-                  {reflection.content.whatWentWell && (
+                  {typeof reflection.content === 'object' && reflection.content?.whatWentWell && (
                     <p className="text-sm text-gray-600 line-clamp-2">
                       {reflection.content.whatWentWell}
+                    </p>
+                  )}
+                  {typeof reflection.content === 'string' && (
+                    <p className="text-sm text-gray-600 line-clamp-2">
+                      {reflection.content}
                     </p>
                   )}
                 </div>
@@ -227,4 +262,3 @@ export default function ReflectionJournal({ reflections, goals, onSubmit, curren
     </div>
   )
 }
-

@@ -24,7 +24,7 @@ dist-ssr
 *.sw?
 
 # AWS Amplify
-amplify/
+# amplify/
 .amplifyrc
 amplify.config.js
 amplify_outputs.json

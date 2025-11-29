@@ -10,15 +10,18 @@ interface SessionDetailModalProps {
   currentUserId: string
 }
 
-export default function SessionDetailModal({ 
-  session, 
-  onClose, 
+export default function SessionDetailModal({
+  session,
+  onClose,
   onLeaveFeedback,
-  currentUserId 
+  currentUserId
 }: SessionDetailModalProps) {
   const isMentee = session.menteeId === currentUserId
   const sessionDate = new Date(`${session.date}T${session.time}`)
   const endTime = new Date(sessionDate.getTime() + session.duration * 60000)
+
+  // Fix: Check if mentor exists
+  if (!session.mentor) return null;
 
   return (
     <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
@@ -38,13 +41,12 @@ export default function SessionDetailModal({
       <div className="p-6 space-y-6">
         {/* Status Badge */}
         <div className="flex items-center justify-between">
-          <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
-            session.status === 'completed' ? 'bg-green-100 text-green-700' :
-            session.status === 'confirmed' ? 'bg-blue-100 text-blue-700' :
-            session.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
-            'bg-red-100 text-red-700'
-          }`}>
-            {session.status.charAt(0).toUpperCase() + session.status.slice(1)}
+          <span className={`px-3 py-1 rounded-full text-sm font-semibold ${session.status === 'completed' || session.status === 'COMPLETED' ? 'bg-green-100 text-green-700' :
+              session.status === 'confirmed' || session.status === 'CONFIRMED' ? 'bg-blue-100 text-blue-700' :
+                session.status === 'pending' || session.status === 'PENDING' ? 'bg-yellow-100 text-yellow-700' :
+                  'bg-red-100 text-red-700'
+            }`}>
+            {session.status.charAt(0).toUpperCase() + session.status.slice(1).toLowerCase()}
           </span>
         </div>
 
@@ -116,11 +118,11 @@ export default function SessionDetailModal({
             </div>
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center text-white font-semibold">
-                {session.mentee.name.charAt(0)}
+                {session.mentee?.name.charAt(0)}
               </div>
               <div>
                 <p className="text-sm text-gray-600">Mentee</p>
-                <p className="font-semibold text-gray-900">{session.mentee.name}</p>
+                <p className="font-semibold text-gray-900">{session.mentee?.name}</p>
               </div>
             </div>
           </div>
@@ -151,7 +153,7 @@ export default function SessionDetailModal({
         )}
 
         {/* Feedback Section (for mentees on completed sessions) */}
-        {isMentee && session.status === 'completed' && onLeaveFeedback && (
+        {isMentee && (session.status === 'completed' || session.status === 'COMPLETED') && onLeaveFeedback && (
           <div className="border-t border-gray-200 pt-4">
             <FeedbackPrompt
               session={session}
@@ -168,9 +170,8 @@ export default function SessionDetailModal({
               {[1, 2, 3, 4, 5].map((star) => (
                 <span
                   key={star}
-                  className={`text-2xl ${
-                    star <= (session.rating || 0) ? 'text-yellow-400' : 'text-gray-300'
-                  }`}
+                  className={`text-2xl ${star <= (session.rating || 0) ? 'text-yellow-400' : 'text-gray-300'
+                    }`}
                 >
                   ★
                 </span>
@@ -195,4 +196,3 @@ export default function SessionDetailModal({
     </div>
   )
 }
-

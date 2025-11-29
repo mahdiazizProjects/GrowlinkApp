@@ -51,7 +51,7 @@ export const useApp = () => {
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User | null>(null)
-  
+
   // Mock data - in real app, this would come from API
   const [venues] = useState<Venue[]>([
     {
@@ -112,7 +112,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         id: `notif-${Date.now()}`,
         userId: session.mentorId,
         title: 'New Session Booked',
-        message: `${session.mentee.name} booked a session with you on ${new Date(session.date).toLocaleDateString()}`,
+        message: `${session.mentee?.name || 'Mentee'} booked a session with you on ${new Date(session.date).toLocaleDateString()}`,
         type: 'session-booked',
         read: false,
         relatedId: session.id,
@@ -154,7 +154,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const existing = habitCompletions.find(
       hc => hc.habitId === habitId && hc.date === date
     )
-    
+
     if (existing) {
       setHabitCompletions(habitCompletions.filter(hc => hc.id !== existing.id))
     } else {
@@ -181,8 +181,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const addSessionFeedback = (feedback: SessionFeedback) => {
     setSessionFeedbacks([...sessionFeedbacks, feedback])
     // Mark session as having feedback submitted
-    setSessions(sessions.map(s => 
-      s.id === feedback.sessionId 
+    setSessions(sessions.map(s =>
+      s.id === feedback.sessionId
         ? { ...s, feedbackSubmitted: true, feedbackSubmittedAt: feedback.createdAt }
         : s
     ))
@@ -231,8 +231,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }
 
   const updateMentorSessionNotes = (noteId: string, updates: Partial<MentorSessionNotes>) => {
-    setMentorSessionNotes(mentorSessionNotes.map(n => 
-      n.id === noteId 
+    setMentorSessionNotes(mentorSessionNotes.map(n =>
+      n.id === noteId
         ? { ...n, ...updates, updatedAt: new Date().toISOString() }
         : n
     ))
@@ -247,7 +247,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }
 
   const markNotificationAsRead = (notificationId: string) => {
-    setNotifications(notifications.map(n => 
+    setNotifications(notifications.map(n =>
       n.id === notificationId ? { ...n, read: true } : n
     ))
   }
@@ -259,7 +259,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const getMentorStats = (mentorId: string): MentorStats | null => {
     const mentorSessions = sessions.filter(s => s.mentorId === mentorId)
     const mentorFeedbacks = sessionFeedbacks.filter(f => f.mentorId === mentorId)
-    
+
     if (mentorSessions.length === 0) return null
 
     const averageRating = mentorFeedbacks.length > 0
@@ -306,17 +306,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const getMenteeSummaries = (mentorId: string): MenteeSummary[] => {
     const mentorSessions = sessions.filter(s => s.mentorId === mentorId)
     const menteeIds = [...new Set(mentorSessions.map(s => s.menteeId))]
-    
+
     return menteeIds.map(menteeId => {
       const menteeSessions = mentorSessions.filter(s => s.menteeId === menteeId)
       const completedSessions = menteeSessions.filter(s => s.status === 'completed')
       const menteeFeedbacks = sessionFeedbacks.filter(f => f.menteeId === menteeId && f.mentorId === mentorId)
-      
+
       const averageRating = menteeFeedbacks.length > 0
         ? menteeFeedbacks.reduce((sum, f) => sum + f.rating, 0) / menteeFeedbacks.length
         : 0
 
-      const lastSession = completedSessions.sort((a, b) => 
+      const lastSession = completedSessions.sort((a, b) =>
         new Date(b.date).getTime() - new Date(a.date).getTime()
       )[0]
 
@@ -324,7 +324,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       return {
         menteeId,
-        mentee: mentee || { id: menteeId, name: 'Unknown', email: '', role: 'mentee', avatar: '', bio: '', location: '', skills: [], membershipTier: 'standard', verified: false, createdAt: '' },
+        mentee: mentee || { id: menteeId, username: 'unknown', name: 'Unknown', email: '', role: 'mentee', avatar: '', bio: '', location: '', skills: [], membershipTier: 'standard', verified: false, createdAt: '' },
         totalSessions: menteeSessions.length,
         completedSessions: completedSessions.length,
         averageRating: Math.round(averageRating * 10) / 10,

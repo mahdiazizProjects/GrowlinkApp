@@ -84,7 +84,7 @@ export default function MentorSessionDetailModal({
             <User className="text-primary-600 mt-1" size={20} />
             <div>
               <p className="text-sm text-gray-600">Mentee</p>
-              <p className="font-semibold text-gray-900">{session.mentee.name}</p>
+              <p className="font-semibold text-gray-900">{session.mentee?.name}</p>
             </div>
           </div>
           <div className="flex items-start gap-3">
@@ -100,12 +100,11 @@ export default function MentorSessionDetailModal({
 
         {/* Status */}
         <div>
-          <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
-            session.status === 'completed' ? 'bg-green-100 text-green-700' :
-            session.status === 'confirmed' ? 'bg-blue-100 text-blue-700' :
-            session.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
-            'bg-red-100 text-red-700'
-          }`}>
+          <span className={`px-3 py-1 rounded-full text-sm font-semibold ${session.status === 'completed' ? 'bg-green-100 text-green-700' :
+              session.status === 'confirmed' ? 'bg-blue-100 text-blue-700' :
+                session.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                  'bg-red-100 text-red-700'
+            }`}>
             {session.status.charAt(0).toUpperCase() + session.status.slice(1)}
           </span>
         </div>
@@ -201,9 +200,8 @@ export default function MentorSessionDetailModal({
                 disabled={!isEditing}
                 placeholder="What was discussed in this session?"
                 rows={4}
-                className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none resize-none ${
-                  isEditing ? 'border-gray-300' : 'border-gray-200 bg-gray-50'
-                }`}
+                className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none resize-none ${isEditing ? 'border-gray-300' : 'border-gray-200 bg-gray-50'
+                  }`}
               />
             </div>
 
@@ -217,9 +215,8 @@ export default function MentorSessionDetailModal({
                 disabled={!isEditing}
                 placeholder="What are the next steps or action items?"
                 rows={3}
-                className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none resize-none ${
-                  isEditing ? 'border-gray-300' : 'border-gray-200 bg-gray-50'
-                }`}
+                className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none resize-none ${isEditing ? 'border-gray-300' : 'border-gray-200 bg-gray-50'
+                  }`}
               />
             </div>
 
@@ -233,9 +230,8 @@ export default function MentorSessionDetailModal({
                 disabled={!isEditing}
                 placeholder="What should the mentee focus on for growth?"
                 rows={2}
-                className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none resize-none ${
-                  isEditing ? 'border-gray-300' : 'border-gray-200 bg-gray-50'
-                }`}
+                className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none resize-none ${isEditing ? 'border-gray-300' : 'border-gray-200 bg-gray-50'
+                  }`}
               />
             </div>
 
@@ -249,9 +245,8 @@ export default function MentorSessionDetailModal({
                 disabled={!isEditing}
                 placeholder="Your private reflection (not visible to mentee)"
                 rows={3}
-                className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none resize-none ${
-                  isEditing ? 'border-gray-300' : 'border-gray-200 bg-gray-50'
-                }`}
+                className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none resize-none ${isEditing ? 'border-gray-300' : 'border-gray-200 bg-gray-50'
+                  }`}
               />
             </div>
           </div>

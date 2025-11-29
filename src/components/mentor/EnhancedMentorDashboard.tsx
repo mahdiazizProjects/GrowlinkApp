@@ -27,16 +27,16 @@ export default function EnhancedMentorDashboard({
   onSessionClick,
   onViewMentees
 }: EnhancedMentorDashboardProps) {
-  const mentorSessions = useMemo(() => 
+  const mentorSessions = useMemo(() =>
     sessions.filter(s => s.mentorId === mentorId),
     [sessions, mentorId]
   )
 
   const stats = useMemo(() => {
-    const upcomingSessions = mentorSessions.filter(s => 
+    const upcomingSessions = mentorSessions.filter(s =>
       s.status === 'confirmed' || s.status === 'pending'
     )
-    
+
     // Today's sessions should be upcoming sessions (pending/confirmed) that are scheduled for today
     const today = new Date()
     const todayDateString = today.toISOString().split('T')[0] // YYYY-MM-DD format
@@ -161,7 +161,7 @@ export default function EnhancedMentorDashboard({
                   <div className="flex items-start justify-between mb-2">
                     <div>
                       <p className="font-semibold text-gray-900">
-                        {feedback.isAnonymous ? 'Anonymous' : session?.mentee.name || 'Mentee'}
+                        {feedback.isAnonymous ? 'Anonymous' : session?.mentee?.name || 'Mentee'}
                       </p>
                       <p className="text-sm text-gray-600">
                         {format(new Date(feedback.createdAt), 'MMM d, yyyy')}
@@ -172,9 +172,8 @@ export default function EnhancedMentorDashboard({
                       {[1, 2, 3, 4, 5].map(star => (
                         <span
                           key={star}
-                          className={`text-lg ${
-                            star <= feedback.rating ? 'text-yellow-400' : 'text-gray-300'
-                          }`}
+                          className={`text-lg ${star <= feedback.rating ? 'text-yellow-400' : 'text-gray-300'
+                            }`}
                         >
                           ★
                         </span>
@@ -210,7 +209,7 @@ function SummaryCard({ icon, label, value, color, onClick, clickable }: {
   }
 
   return (
-    <div 
+    <div
       onClick={clickable ? onClick : undefined}
       className={`bg-white rounded-xl shadow-lg p-6 ${clickable ? 'cursor-pointer hover:shadow-xl hover:scale-105 transition-all' : ''}`}
     >
@@ -249,17 +248,16 @@ function SessionCard({ session, onClick }: { session: Session; onClick: () => vo
       className="border-2 border-gray-200 rounded-lg p-4 hover:border-primary-300 hover:bg-primary-50 cursor-pointer transition-all active:scale-95"
     >
       <div className="flex items-center justify-between mb-2">
-        <span className="font-semibold text-gray-900">{session.mentee.name}</span>
+        <span className="font-semibold text-gray-900">{session.mentee?.name}</span>
         <span className="text-sm text-gray-600">
           {formattedDate} at {session.time}
         </span>
       </div>
       <p className="text-sm text-gray-700 mb-2">{session.topic}</p>
-      <span className={`inline-block px-2 py-1 rounded text-xs font-semibold ${
-        session.status === 'confirmed' ? 'bg-blue-100 text-blue-700' :
+      <span className={`inline-block px-2 py-1 rounded text-xs font-semibold ${session.status === 'confirmed' ? 'bg-blue-100 text-blue-700' :
         session.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
-        'bg-gray-100 text-gray-700'
-      }`}>
+          'bg-gray-100 text-gray-700'
+        }`}>
         {session.status}
       </span>
     </div>

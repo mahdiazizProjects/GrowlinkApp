@@ -1,18 +1,27 @@
 export interface User {
   id: string;
+  username: string;
   name: string;
   email: string;
-  role: 'mentor' | 'mentee';
-  avatar: string;
-  bio: string;
-  location: string;
-  skills: string[];
-  membershipTier: 'standard' | 'premium' | 'exclusive';
-  verified: boolean;
+  role: 'MENTOR' | 'MENTEE' | 'BOTH' | 'mentor' | 'mentee';
+  avatar?: string;
+  bio?: string;
+  location?: string;
+  skills?: string[];
+  interests?: string[];
+  mentorshipCategories?: Category[];
+  membershipTier?: 'standard' | 'premium' | 'exclusive';
+  verified?: boolean;
   rating?: number;
   totalSessions?: number;
   inPersonSessions?: number;
   createdAt: string;
+}
+
+export interface Category {
+  id: string;
+  name: string;
+  description?: string;
 }
 
 export interface Venue {
@@ -32,22 +41,24 @@ export interface Session {
   id: string;
   mentorId: string;
   menteeId: string;
-  mentor: User;
-  mentee: User;
+  mentor?: User;
+  mentee?: User;
   type: 'virtual' | 'in-person';
   venueId?: string;
   venue?: Venue;
   date: string;
   time: string;
   duration: number; // in minutes
-  status: 'pending' | 'confirmed' | 'completed' | 'cancelled';
-  price: number;
-  topic: string;
+  status: 'PENDING' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED' | 'pending' | 'confirmed' | 'completed' | 'cancelled';
+  price?: number;
+  topic?: string;
   rating?: number;
   review?: string;
-  feedbackEligible?: boolean; // true when session is completed
-  feedbackSubmitted?: boolean; // true when feedback has been submitted
-  feedbackSubmittedAt?: string; // timestamp when feedback was submitted
+  feedbackEligible?: boolean;
+  feedbackSubmitted?: boolean;
+  feedbackSubmittedAt?: string;
+  notes?: string;
+  meetingLink?: string;
 }
 
 export interface Event {
@@ -70,22 +81,102 @@ export interface Event {
   image?: string;
 }
 
-export interface Rating {
+export interface Reflection {
   id: string;
-  sessionId: string;
-  fromUserId: string;
-  toUserId: string;
-  rating: number; // 1-5
-  comment: string;
-  isInPerson: boolean;
+  userId: string;
+  date: string;
+  goalId?: string;
+  week?: string; // Legacy field
+  mood: 'GREAT' | 'GOOD' | 'NEUTRAL' | 'BAD' | 'AWFUL';
+  moodScore?: number;
+  content?: {
+    whatWentWell?: string;
+    whatFeltHard?: string;
+    insights?: string;
+  } | string; // Allow both for compatibility
+  isShared: boolean;
+  sharedWithMentorId?: string;
+  mentorFeedback?: {
+    mentorId: string;
+    feedback: string;
+    createdAt: string;
+  } | string; // Allow both
+  aiInsights?: string; // Legacy field
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface Review {
+  id: string;
+  authorId: string;
+  targetId: string;
+  rating: number;
+  comment?: string;
+  type: 'SESSION_FEEDBACK' | 'GENERAL';
   createdAt: string;
 }
 
-// Habit-Based Mentorship System Types
+export interface ActionPlan {
+  id: string;
+  creatorId: string;
+  assigneeId: string;
+  title: string;
+  description?: string;
+  startDate?: string;
+  endDate?: string;
+  status: 'ACTIVE' | 'COMPLETED' | 'ARCHIVED';
+  items?: ActionItem[];
+  createdAt?: string;
+}
+
+export interface ActionItem {
+  id: string;
+  planId: string;
+  title: string;
+  description?: string;
+  type: 'DO' | 'AVOID';
+  frequency: 'DAILY' | 'WEEKLY' | 'ONE_TIME';
+  status: 'ACTIVE' | 'PAUSED' | 'COMPLETED';
+  progress?: ProgressReport[];
+}
+
+export interface ProgressReport {
+  id: string;
+  actionItemId: string;
+  date: string;
+  status: 'COMPLETED' | 'MISSED' | 'SKIPPED';
+  notes?: string;
+  evidence?: string;
+}
+
+// Legacy types kept for compatibility if needed, but ideally should be refactored
+export interface Badge {
+  id: string;
+  userId: string;
+  type: 'consistency' | 'reflection' | 'identity-builder' | 'streak' | 'milestone';
+  title: string;
+  description: string;
+  icon: string;
+  earnedAt: string;
+  metadata?: Record<string, any>;
+}
+
+export interface Notification {
+  id: string;
+  userId: string;
+  title: string;
+  message: string;
+  type: 'session-booked' | 'session-upcoming' | 'feedback-received' | 'badge-earned' | 'admin-update';
+  read: boolean;
+  relatedId?: string;
+  createdAt: string;
+}
+
+// Legacy types restored for compatibility
 export interface Goal {
   id: string;
   userId: string;
-  identity: string; // "I want to become a [type of person] who [specific action]"
+  identity: string;
   title: string;
   description?: string;
   status: 'draft' | 'pending-approval' | 'active' | 'completed' | 'archived';
@@ -100,7 +191,7 @@ export interface Habit {
   title: string;
   description?: string;
   frequency: 'daily' | 'weekly';
-  duration: number; // in minutes, should be ≤ 2 min for 1% habits
+  duration: number;
   cue: {
     time?: string;
     place?: string;
@@ -116,71 +207,24 @@ export interface HabitCompletion {
   id: string;
   habitId: string;
   userId: string;
-  date: string; // YYYY-MM-DD
+  date: string;
   completed: boolean;
   notes?: string;
   createdAt: string;
 }
 
-export interface Reflection {
-  id: string;
-  userId: string;
-  goalId?: string;
-  week: string; // YYYY-WW format
-  content: {
-    whatWentWell?: string;
-    whatFeltHard?: string;
-    insights?: string;
-  };
-  mentorFeedback?: {
-    mentorId: string;
-    feedback: string;
-    createdAt: string;
-  };
-  aiInsights?: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface Badge {
-  id: string;
-  userId: string;
-  type: 'consistency' | 'reflection' | 'identity-builder' | 'streak' | 'milestone';
-  title: string;
-  description: string;
-  icon: string;
-  earnedAt: string;
-  metadata?: Record<string, any>;
-}
-
-export interface Streak {
-  habitId: string;
-  currentStreak: number;
-  longestStreak: number;
-  lastCompletedDate: string;
-}
-
-export interface HabitProgress {
-  habitId: string;
-  completionRate: number; // 0-100
-  totalCompletions: number;
-  totalDays: number;
-  streak: Streak;
-}
-
-// Post-Session Mentor Feedback Types
 export interface SessionFeedback {
   id: string;
   sessionId: string;
   menteeId: string;
   mentorId: string;
-  rating: number; // 1-5 stars
-  growthArea: string; // Required: "What is one area where you'd like the mentor to help you grow?"
-  growthIdea: string; // Required: "What idea do you have for how the mentor can support your growth in that area?"
-  whatWentWell: string; // Required: "What did the mentor do well in this session?"
-  whatToImprove: string; // Required: "What could be improved for next time?"
-  additionalComments?: string; // Optional: Additional feedback
-  isAnonymous?: boolean; // Whether mentee name is shown to mentor
+  rating: number;
+  growthArea: string;
+  growthIdea: string;
+  whatWentWell: string;
+  whatToImprove: string;
+  additionalComments?: string;
+  isAnonymous?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -199,28 +243,16 @@ export interface MentorFeedbackStats {
   recentFeedbacks: SessionFeedback[];
 }
 
-// Mentor Dashboard & Session Management Types
 export interface MentorSessionNotes {
   id: string;
   sessionId: string;
   mentorId: string;
-  summary: string; // What was discussed
-  followUps: string; // Follow-up action items
-  growthFocus?: string; // Growth focus for mentee
-  privateNotes?: string; // Private reflection
+  summary: string;
+  followUps: string;
+  growthFocus?: string;
+  privateNotes?: string;
   createdAt: string;
   updatedAt: string;
-}
-
-export interface Notification {
-  id: string;
-  userId: string;
-  title: string;
-  message: string;
-  type: 'session-booked' | 'session-upcoming' | 'feedback-received' | 'badge-earned' | 'admin-update';
-  read: boolean;
-  relatedId?: string; // ID of related session, feedback, etc.
-  createdAt: string;
 }
 
 export interface MentorStats {
@@ -228,10 +260,10 @@ export interface MentorStats {
   averageRating: number;
   totalSessions: number;
   totalFeedbacks: number;
-  strengthKeywords: string[]; // Extracted from positive feedback
-  improvementKeywords: string[]; // Extracted from improvement suggestions
+  strengthKeywords: string[];
+  improvementKeywords: string[];
   sessionsPerWeek: number;
-  feedbackResponseRate: number; // % of sessions with feedback
+  feedbackResponseRate: number;
   lastUpdated: string;
 }
 
@@ -242,7 +274,16 @@ export interface MenteeSummary {
   completedSessions: number;
   averageRating: number;
   lastSessionDate?: string;
-  mentorNotes?: string; // Private notes from mentor
+  mentorNotes?: string;
 }
 
-
+export interface Rating {
+  id: string;
+  sessionId: string;
+  fromUserId: string;
+  toUserId: string;
+  rating: number;
+  comment: string;
+  isInPerson: boolean;
+  createdAt: string;
+}

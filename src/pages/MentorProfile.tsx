@@ -72,14 +72,14 @@ export default function MentorProfile() {
             {/* Bio */}
             <div className="bg-white rounded-xl shadow-lg p-6">
               <h2 className="text-2xl font-semibold text-gray-900 mb-4">About</h2>
-              <p className="text-gray-700 leading-relaxed">{mentor.bio}</p>
+              <p className="text-gray-700 leading-relaxed">{mentor.bio || 'No bio available'}</p>
             </div>
 
             {/* Skills */}
             <div className="bg-white rounded-xl shadow-lg p-6">
               <h2 className="text-2xl font-semibold text-gray-900 mb-4">Expertise</h2>
               <div className="flex flex-wrap gap-3">
-                {mentor.skills.map((skill, idx) => (
+                {(mentor.skills || []).map((skill, idx) => (
                   <span
                     key={idx}
                     className="px-4 py-2 bg-primary-50 text-primary-700 rounded-lg font-medium"
@@ -164,4 +164,3 @@ export default function MentorProfile() {
     </div>
   )
 }
-

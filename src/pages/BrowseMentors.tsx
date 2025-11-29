@@ -9,11 +9,11 @@ export default function BrowseMentors() {
 
   const filteredMentors = mockMentors.filter(mentor => {
     const matchesSearch = mentor.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      mentor.skills.some(skill => skill.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      mentor.bio.toLowerCase().includes(searchTerm.toLowerCase())
-    
+      (mentor.skills || []).some(skill => skill.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (mentor.bio || '').toLowerCase().includes(searchTerm.toLowerCase())
+
     const matchesTier = filterTier === 'all' || mentor.membershipTier === filterTier
-    
+
     return matchesSearch && matchesTier
   })
 
@@ -88,11 +88,11 @@ export default function BrowseMentors() {
                   )}
                 </div>
               </div>
-              
-              <p className="text-sm text-gray-600 mb-4 line-clamp-2">{mentor.bio}</p>
-              
+
+              <p className="text-sm text-gray-600 mb-4 line-clamp-2">{mentor.bio || 'No bio available'}</p>
+
               <div className="flex flex-wrap gap-2 mb-4">
-                {mentor.skills.slice(0, 3).map((skill, idx) => (
+                {(mentor.skills || []).slice(0, 3).map((skill, idx) => (
                   <span
                     key={idx}
                     className="px-2 py-1 bg-primary-50 text-primary-700 rounded text-xs font-medium"
@@ -127,4 +127,3 @@ export default function BrowseMentors() {
     </div>
   )
 }
-

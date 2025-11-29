@@ -21,7 +21,7 @@ export default function FeedbackPrompt({ session, onLeaveFeedback }: FeedbackPro
           <div className="flex-1">
             <p className="font-semibold text-green-900">Feedback Submitted</p>
             <p className="text-sm text-green-700">
-              Thank you for your feedback! {session.feedbackSubmittedAt && 
+              Thank you for your feedback! {session.feedbackSubmittedAt &&
                 `Submitted on ${format(new Date(session.feedbackSubmittedAt), 'MMM d, yyyy')}`
               }
             </p>
@@ -55,7 +55,7 @@ export default function FeedbackPrompt({ session, onLeaveFeedback }: FeedbackPro
           <div>
             <p className="font-semibold text-primary-900">Leave Session Feedback</p>
             <p className="text-sm text-primary-700">
-              Help {session.mentor.name} improve by sharing your experience
+              Help {session.mentor?.name} improve by sharing your experience
               {daysSinceSession > 0 && ` (${7 - daysSinceSession} days remaining)`}
             </p>
           </div>

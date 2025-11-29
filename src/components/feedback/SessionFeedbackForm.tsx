@@ -10,11 +10,11 @@ interface SessionFeedbackFormProps {
   existingFeedback?: SessionFeedback
 }
 
-export default function SessionFeedbackForm({ 
-  session, 
-  onSubmit, 
+export default function SessionFeedbackForm({
+  session,
+  onSubmit,
   onClose,
-  existingFeedback 
+  existingFeedback
 }: SessionFeedbackFormProps) {
   const [rating, setRating] = useState<number>(existingFeedback?.rating || 0)
   const [hoveredRating, setHoveredRating] = useState(0)
@@ -28,7 +28,7 @@ export default function SessionFeedbackForm({
 
   const validate = () => {
     const newErrors: Record<string, string> = {}
-    
+
     if (rating === 0) {
       newErrors.rating = 'Please provide a rating'
     }
@@ -74,7 +74,7 @@ export default function SessionFeedbackForm({
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Session Feedback</h2>
           <p className="text-sm text-gray-600 mt-1">
-            {session.mentor.name} • {format(new Date(session.date), 'MMM d, yyyy')} at {session.time}
+            {session.mentor?.name} • {format(new Date(session.date), 'MMM d, yyyy')} at {session.time}
           </p>
         </div>
         <button
@@ -100,9 +100,8 @@ export default function SessionFeedbackForm({
                 onMouseEnter={() => !isReadOnly && setHoveredRating(star)}
                 onMouseLeave={() => !isReadOnly && setHoveredRating(0)}
                 disabled={isReadOnly}
-                className={`transition-all ${
-                  isReadOnly ? 'cursor-default' : 'cursor-pointer hover:scale-110'
-                }`}
+                className={`transition-all ${isReadOnly ? 'cursor-default' : 'cursor-pointer hover:scale-110'
+                  }`}
               >
                 <Star
                   size={40}
@@ -139,9 +138,8 @@ export default function SessionFeedbackForm({
             placeholder="e.g., Communication skills, Technical knowledge, Career planning..."
             rows={3}
             disabled={isReadOnly}
-            className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none resize-none ${
-              errors.growthArea ? 'border-red-300' : 'border-gray-300'
-            } ${isReadOnly ? 'bg-gray-50' : ''}`}
+            className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none resize-none ${errors.growthArea ? 'border-red-300' : 'border-gray-300'
+              } ${isReadOnly ? 'bg-gray-50' : ''}`}
           />
           {errors.growthArea && (
             <p className="mt-1 text-sm text-red-600 flex items-center gap-1">
@@ -162,9 +160,8 @@ export default function SessionFeedbackForm({
             placeholder="e.g., Practice mock interviews, Review my portfolio, Share industry insights..."
             rows={3}
             disabled={isReadOnly}
-            className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none resize-none ${
-              errors.growthIdea ? 'border-red-300' : 'border-gray-300'
-            } ${isReadOnly ? 'bg-gray-50' : ''}`}
+            className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none resize-none ${errors.growthIdea ? 'border-red-300' : 'border-gray-300'
+              } ${isReadOnly ? 'bg-gray-50' : ''}`}
           />
           {errors.growthIdea && (
             <p className="mt-1 text-sm text-red-600 flex items-center gap-1">
@@ -185,9 +182,8 @@ export default function SessionFeedbackForm({
             placeholder="Share what the mentor did well..."
             rows={3}
             disabled={isReadOnly}
-            className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none resize-none ${
-              errors.whatWentWell ? 'border-red-300' : 'border-gray-300'
-            } ${isReadOnly ? 'bg-gray-50' : ''}`}
+            className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none resize-none ${errors.whatWentWell ? 'border-red-300' : 'border-gray-300'
+              } ${isReadOnly ? 'bg-gray-50' : ''}`}
           />
           {errors.whatWentWell && (
             <p className="mt-1 text-sm text-red-600 flex items-center gap-1">
@@ -208,9 +204,8 @@ export default function SessionFeedbackForm({
             placeholder="Share constructive feedback for improvement..."
             rows={3}
             disabled={isReadOnly}
-            className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none resize-none ${
-              errors.whatToImprove ? 'border-red-300' : 'border-gray-300'
-            } ${isReadOnly ? 'bg-gray-50' : ''}`}
+            className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none resize-none ${errors.whatToImprove ? 'border-red-300' : 'border-gray-300'
+              } ${isReadOnly ? 'bg-gray-50' : ''}`}
           />
           {errors.whatToImprove && (
             <p className="mt-1 text-sm text-red-600 flex items-center gap-1">
@@ -231,9 +226,8 @@ export default function SessionFeedbackForm({
             placeholder="Any other feedback or comments..."
             rows={3}
             disabled={isReadOnly}
-            className={`w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none resize-none ${
-              isReadOnly ? 'bg-gray-50' : ''
-            }`}
+            className={`w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none resize-none ${isReadOnly ? 'bg-gray-50' : ''
+              }`}
           />
         </div>
 

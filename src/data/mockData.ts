@@ -3,6 +3,7 @@ import { User, Event } from '../types'
 export const mockMentors: User[] = [
   {
     id: '1',
+    username: 'sarahchen',
     name: 'Sarah Chen',
     email: 'sarah@example.com',
     role: 'mentor',
@@ -19,6 +20,7 @@ export const mockMentors: User[] = [
   },
   {
     id: '2',
+    username: 'marcusjohnson',
     name: 'Marcus Johnson',
     email: 'marcus@example.com',
     role: 'mentor',
@@ -35,6 +37,7 @@ export const mockMentors: User[] = [
   },
   {
     id: '3',
+    username: 'priyapatel',
     name: 'Priya Patel',
     email: 'priya@example.com',
     role: 'mentor',
@@ -51,6 +54,7 @@ export const mockMentors: User[] = [
   },
   {
     id: '4',
+    username: 'davidkim',
     name: 'David Kim',
     email: 'david@example.com',
     role: 'mentor',

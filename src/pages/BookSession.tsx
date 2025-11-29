@@ -8,7 +8,7 @@ export default function BookSession() {
   const { mentorId } = useParams()
   const navigate = useNavigate()
   const { venues, addSession, currentUser } = useApp()
-  
+
   const mentor = mockMentors.find(m => m.id === mentorId)
   const [sessionType, setSessionType] = useState<'virtual' | 'in-person'>('in-person')
   const [selectedVenue, setSelectedVenue] = useState<string>('')
@@ -40,11 +40,11 @@ export default function BookSession() {
     const today = new Date()
     const selected = selectedDate ? new Date(selectedDate + 'T00:00:00') : null
     const isToday = selected && selected.toDateString() === today.toDateString()
-    
+
     // Start time: if today, start from next 15-minute interval after current time, otherwise 9:00 AM
     let startHour = 9
     let startMinute = 0
-    
+
     if (isToday) {
       const now = new Date()
       startHour = now.getHours()
@@ -58,7 +58,7 @@ export default function BookSession() {
         return []
       }
     }
-    
+
     // Generate slots from start time to 8:00 PM (20:00)
     for (let hour = startHour; hour < 20; hour++) {
       const minStart = hour === startHour ? startMinute : 0
@@ -67,7 +67,7 @@ export default function BookSession() {
         slots.push(timeString)
       }
     }
-    
+
     return slots
   }
 
@@ -82,20 +82,20 @@ export default function BookSession() {
 
     const now = new Date()
     const today = new Date().toISOString().split('T')[0]
-    
+
     // Calculate next 15-minute slot
     const nextSlot = Math.ceil(now.getMinutes() / 15) * 15
     let nextHour = now.getHours()
     let nextMin = nextSlot
-    
+
     if (nextMin >= 60) {
       nextHour += 1
       nextMin = 0
     }
-    
+
     let bookingDate = today
     let bookingTime = ''
-    
+
     // If it's after 8 PM, set to tomorrow 9 AM
     if (nextHour >= 20) {
       const tomorrow = new Date()
@@ -108,10 +108,10 @@ export default function BookSession() {
 
     // Generate slots to validate the time
     const slots = generateTimeSlots(bookingDate)
-    const validTime = slots.length > 0 && slots.includes(bookingTime) 
-      ? bookingTime 
-      : slots.length > 0 
-        ? slots[0] 
+    const validTime = slots.length > 0 && slots.includes(bookingTime)
+      ? bookingTime
+      : slots.length > 0
+        ? slots[0]
         : '09:00'
 
     // For in-person sessions, auto-select first venue if available
@@ -205,7 +205,7 @@ export default function BookSession() {
             />
             <div>
               <h1 className="text-2xl font-bold text-gray-900">Book Session with {mentor.name}</h1>
-              <p className="text-gray-600">{mentor.bio.substring(0, 60)}...</p>
+              <p className="text-gray-600 mb-4">{(mentor.bio || 'No bio available').substring(0, 60)}...</p>
             </div>
           </div>
         </div>
@@ -222,11 +222,10 @@ export default function BookSession() {
                     setSessionType('in-person')
                     setSelectedVenue('')
                   }}
-                  className={`p-4 border-2 rounded-lg transition-all ${
-                    sessionType === 'in-person'
+                  className={`p-4 border-2 rounded-lg transition-all ${sessionType === 'in-person'
                       ? 'border-primary-600 bg-primary-50'
                       : 'border-gray-200 hover:border-gray-300'
-                  }`}
+                    }`}
                 >
                   <MapPin className={`mx-auto mb-2 ${sessionType === 'in-person' ? 'text-primary-600' : 'text-gray-400'}`} size={32} />
                   <div className="font-semibold text-gray-900">In-Person</div>
@@ -236,11 +235,10 @@ export default function BookSession() {
                 </button>
                 <button
                   onClick={() => setSessionType('virtual')}
-                  className={`p-4 border-2 rounded-lg transition-all ${
-                    sessionType === 'virtual'
+                  className={`p-4 border-2 rounded-lg transition-all ${sessionType === 'virtual'
                       ? 'border-primary-600 bg-primary-50'
                       : 'border-gray-200 hover:border-gray-300'
-                  }`}
+                    }`}
                 >
                   <Video className={`mx-auto mb-2 ${sessionType === 'virtual' ? 'text-primary-600' : 'text-gray-400'}`} size={32} />
                   <div className="font-semibold text-gray-900">Virtual</div>
@@ -258,11 +256,10 @@ export default function BookSession() {
                     <button
                       key={venue.id}
                       onClick={() => setSelectedVenue(venue.id)}
-                      className={`w-full p-4 border-2 rounded-lg text-left transition-all ${
-                        selectedVenue === venue.id
+                      className={`w-full p-4 border-2 rounded-lg text-left transition-all ${selectedVenue === venue.id
                           ? 'border-primary-600 bg-primary-50'
                           : 'border-gray-200 hover:border-gray-300'
-                      }`}
+                        }`}
                     >
                       <div className="flex items-center justify-between mb-1">
                         <span className="font-semibold text-gray-900">{venue.name}</span>
@@ -282,7 +279,7 @@ export default function BookSession() {
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-semibold text-gray-900">Date & Time</h2>
               </div>
-              
+
               <div className="grid md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -358,7 +355,7 @@ export default function BookSession() {
           <div className="space-y-6">
             <div className="bg-white rounded-xl shadow-lg p-6 sticky top-24">
               <h2 className="text-xl font-semibold text-gray-900 mb-4">Booking Summary</h2>
-              
+
               <div className="space-y-3 mb-4">
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-600">Session Type</span>
