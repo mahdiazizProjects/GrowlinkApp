@@ -29,28 +29,35 @@ export default function Navbar() {
             <span className="text-2xl font-bold text-gradient">GrowLink</span>
           </Link>
 
-          {/* Navigation Links */}
-          <div className="hidden md:flex items-center space-x-1">
-            <NavLink to="/" icon={<Home size={18} />} active={isActive('/')}>
-              Home
-            </NavLink>
-            <NavLink to="/mentors" icon={<User size={18} />} active={isActive('/mentors')}>
-              Mentors
-            </NavLink>
-            <NavLink to="/community" icon={<MessageCircle size={18} />} active={isActive('/community')}>
-              Community
-            </NavLink>
-            <NavLink to="/events" icon={<Calendar size={18} />} active={isActive('/events')}>
-              Events
-            </NavLink>
-            <NavLink to="/venues" icon={<MapPin size={18} />} active={isActive('/venues')}>
-              Venues
-            </NavLink>
-          </div>
+          {/* Navigation Links - Hidden for mentees */}
+          {(!currentUser || currentUser.role !== 'mentee') && (
+            <div className="hidden md:flex items-center space-x-1">
+              <NavLink to="/" icon={<Home size={18} />} active={isActive('/')}>
+                Home
+              </NavLink>
+              <NavLink to="/mentors" icon={<User size={18} />} active={isActive('/mentors')}>
+                Mentors
+              </NavLink>
+              <NavLink to="/community" icon={<MessageCircle size={18} />} active={isActive('/community')}>
+                Community
+              </NavLink>
+              <NavLink to="/events" icon={<Calendar size={18} />} active={isActive('/events')}>
+                Events
+              </NavLink>
+              <NavLink to="/venues" icon={<MapPin size={18} />} active={isActive('/venues')}>
+                Venues
+              </NavLink>
+            </div>
+          )}
 
           {/* Habit Features (when logged in) */}
           {currentUser && (
             <div className="hidden lg:flex items-center space-x-1 mr-4">
+              {currentUser.role === 'mentee' && (
+                <NavLink to="/mentee-home" icon={<Home size={18} />} active={isActive('/mentee-home')}>
+                  Home
+                </NavLink>
+              )}
               <NavLink to="/goals" icon={<Target size={18} />} active={isActive('/goals')}>
                 Goals
               </NavLink>

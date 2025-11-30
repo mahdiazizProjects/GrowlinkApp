@@ -2,6 +2,7 @@ export interface User {
   id: string;
   username: string;
   name: string;
+  title?: string;
   email: string;
   role: 'MENTOR' | 'MENTEE' | 'BOTH' | 'mentor' | 'mentee';
   avatar?: string;
@@ -89,6 +90,7 @@ export interface Reflection {
   week?: string; // Legacy field
   mood: 'GREAT' | 'GOOD' | 'NEUTRAL' | 'BAD' | 'AWFUL';
   moodScore?: number;
+  text?: string; // Simple text field for daily reflections
   content?: {
     whatWentWell?: string;
     whatFeltHard?: string;
@@ -176,13 +178,17 @@ export interface Notification {
 export interface Goal {
   id: string;
   userId: string;
-  identity: string;
+  identity?: string; // Keep for backward compatibility
   title: string;
   description?: string;
-  status: 'draft' | 'pending-approval' | 'active' | 'completed' | 'archived';
+  category?: string;
+  progress?: number; // 0-100
+  dueDate?: string;
+  status?: 'draft' | 'pending-approval' | 'active' | 'completed' | 'archived';
   mentorId?: string;
-  createdAt: string;
-  updatedAt: string;
+  createdAt?: string;
+  updatedAt?: string;
+  todos?: Todo[];
 }
 
 export interface Habit {
@@ -211,6 +217,16 @@ export interface HabitCompletion {
   completed: boolean;
   notes?: string;
   createdAt: string;
+}
+
+export interface Todo {
+  id: string;
+  userId: string;
+  goalId?: string;
+  text: string;
+  done?: boolean;
+  dueDate?: string;
+  createdAt?: string;
 }
 
 export interface SessionFeedback {
