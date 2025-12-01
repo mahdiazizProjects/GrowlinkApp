@@ -9,6 +9,7 @@ import Community from './pages/Community'
 import Events from './pages/Events'
 import Venues from './pages/Venues'
 import Dashboard from './pages/Dashboard'
+import MenteeHome from './pages/MenteeHome'
 import BookSession from './pages/BookSession'
 import Goals from './pages/Goals'
 import Habits from './pages/Habits'
@@ -37,6 +38,7 @@ function App() {
               <Route path="/events" element={<Events />} />
               <Route path="/venues" element={<Venues />} />
               <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/mentee-home" element={<MenteeHome />} />
               <Route path="/book/:mentorId" element={<BookSession />} />
               <Route path="/goals" element={<Goals />} />
               <Route path="/habits" element={<Habits />} />

@@ -38,11 +38,11 @@ export default function UserProfile({ user, onClose, onLogout, onEdit }: UserPro
                 <h3 className="text-2xl font-bold text-gray-900">{user.name}</h3>
                 <div className="flex items-center gap-2 mt-1">
                   <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                    user.role === 'mentor'
+                    user.role === 'MENTOR' || user.role === 'mentor'
                       ? 'bg-gradient-to-r from-primary-100 to-primary-200 text-primary-700'
                       : 'bg-blue-100 text-blue-700'
                   }`}>
-                    {user.role === 'mentor' ? '👨‍🏫 Mentor' : '👤 Mentee'}
+                    {(user.role === 'MENTOR' || user.role === 'mentor') ? '👨‍🏫 Mentor' : '👤 Mentee'}
                   </span>
                   {user.membershipTier === 'exclusive' && (
                     <span className="px-3 py-1 rounded-full text-xs font-semibold bg-gradient-to-r from-gold-400 to-gold-600 text-white">

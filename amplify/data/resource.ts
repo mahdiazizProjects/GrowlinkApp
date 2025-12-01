@@ -5,6 +5,7 @@ const schema = a.schema({
     username: a.string().required(),
     email: a.string().required(),
     name: a.string().required(),
+    title: a.string(),
     role: a.enum(['MENTOR', 'MENTEE', 'BOTH']),
     bio: a.string(),
     avatar: a.string(),
@@ -13,6 +14,8 @@ const schema = a.schema({
     interests: a.string().array(),
     mentorshipCategories: a.hasMany('Category', 'userId'),
     reflections: a.hasMany('Reflection', 'userId'),
+    goals: a.hasMany('Goal', 'userId'),
+    todos: a.hasMany('Todo', 'userId'),
     actionPlans: a.hasMany('ActionPlan', 'creatorId'),
     assignedPlans: a.hasMany('ActionPlan', 'assigneeId'),
     reviewsWritten: a.hasMany('Review', 'authorId'),
@@ -42,10 +45,33 @@ const schema = a.schema({
     date: a.date().required(),
     mood: a.enum(['GREAT', 'GOOD', 'NEUTRAL', 'BAD', 'AWFUL']),
     moodScore: a.integer(),
-    content: a.string(),
+    text: a.string(),
+    content: a.string(), // Keep for backward compatibility
     isShared: a.boolean().required(),
     sharedWithMentorId: a.id(),
     mentorFeedback: a.string(),
+  }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
+
+  Goal: a.model({
+    userId: a.id().required(),
+    user: a.belongsTo('User', 'userId'),
+    title: a.string().required(),
+    description: a.string(),
+    category: a.string(),
+    progress: a.integer(),
+    dueDate: a.date(),
+    status: a.enum(['DRAFT', 'PENDING_APPROVAL', 'ACTIVE', 'COMPLETED', 'ARCHIVED']),
+    todos: a.hasMany('Todo', 'goalId'),
+  }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
+
+  Todo: a.model({
+    userId: a.id().required(),
+    user: a.belongsTo('User', 'userId'),
+    goalId: a.id(),
+    goal: a.belongsTo('Goal', 'goalId'),
+    text: a.string().required(),
+    done: a.boolean(),
+    dueDate: a.date(),
   }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
 
   Review: a.model({
