@@ -184,7 +184,7 @@ export interface Goal {
   category?: string;
   progress?: number; // 0-100
   dueDate?: string;
-  status?: 'draft' | 'pending-approval' | 'active' | 'completed' | 'archived';
+  status?: 'DRAFT' | 'PENDING_APPROVAL' | 'ACTIVE' | 'COMPLETED' | 'ARCHIVED' | 'draft' | 'pending-approval' | 'active' | 'completed' | 'archived';
   mentorId?: string;
   createdAt?: string;
   updatedAt?: string;

@@ -26,17 +26,13 @@ This document outlines the GraphQL API schema and DynamoDB table design for the 
   - `bio` (String) - User bio/description
   - `avatar` (String) - S3 URL for profile photo
   - `location` (String) - City, State/Country
-  - `skills` (List of Strings) - User skills/expertise
-  - `interests` (List of Strings) - User interests
+  - `skills` (Set of Strings) - User skills/expertise
+  - `interests` (Set of Strings) - User interests
   - `membershipTier` (String) - `standard`, `premium`, `exclusive`
   - `verified` (Boolean) - Admin-verified status
   - `rating` (Number) - Average rating (0.0-5.0, auto-calculated)
   - `totalSessions` (Number) - Total sessions completed
   - `inPersonSessions` (Number) - In-person sessions completed
-  - `preferences` (Map)
-    - `notifications` (Boolean) - Push notifications enabled
-    - `emailDigest` (Boolean) - Weekly email digest
-    - `defaultCurrency` (String) - `USD`, `CAD`, `EUR`, etc.
   - `createdAt` (String) - ISO timestamp
   - `updatedAt` (String) - ISO timestamp
 
@@ -60,16 +56,9 @@ type User {
   rating: Float!
   totalSessions: Int!
   inPersonSessions: Int!
-  preferences: UserPreferences!
   mentorshipCategories: [Category!]!
   createdAt: String!
   updatedAt: String!
-}
-
-type UserPreferences {
-  notifications: Boolean!
-  emailDigest: Boolean!
-  defaultCurrency: String!
 }
 
 enum UserRole {
@@ -90,8 +79,8 @@ enum MembershipTier {
 - Get user by email (login/lookup): Query GSI by `email`
 - Get user by username: Query GSI by `username`
 - List users by role: Query GSI by `role`
+- Search users by interest: Query GSI by `interests` (contains filter)
 - Update user profile
-- Update user preferences
 - Calculate rating: Aggregate from Reviews table
 
 ---
@@ -543,8 +532,8 @@ type HabitCompletion {
     - `whatFeltHard` (String)
     - `insights` (String)
     - `gratitude` (List of Strings)
-  - `isShared` (Boolean) - Visible to mentor
-  - `sharedWithMentorId` (String) - Specific mentor to share with
+  - `isShared` (Boolean) - Visible to mentor(s)
+  - `sharedWithMentorId` (String) - Specific mentor to share with (one-to-one relationship; if multiple mentors needed, use separate sharing mechanism)
   - `mentorFeedback` (Map) - Mentor feedback
     - `mentorId` (String)
     - `feedback` (String)
@@ -672,17 +661,19 @@ type SessionFeedback {
 
 **DynamoDB Table**: `Reviews`
 
-- **PK**: `reviewId` (String) - UUID
-- **SK**: (None - single item per review)
+- **PK**: `targetId` (String) - User ID being reviewed
+- **SK**: `authorId` (String) - User ID of reviewer
 
 - **Attributes**:
-  - `authorId` (String) - User ID of reviewer
-  - `targetId` (String) - User ID being reviewed
+  - `authorId` (String) - User ID of reviewer (also SK)
+  - `targetId` (String) - User ID being reviewed (also PK)
   - `rating` (Number) - Rating (1-5)
   - `comment` (String) - Review comment
   - `type` (String) - `SESSION_FEEDBACK`, `GENERAL`
   - `createdAt` (String) - ISO timestamp
   - `updatedAt` (String) - ISO timestamp
+
+**Note**: This structure enforces one review per author-target pair. The `reviewId` in GraphQL can be computed as `${targetId}#${authorId}` or stored as a separate attribute for convenience.
 
 **GraphQL Type**:
 
@@ -705,9 +696,9 @@ enum ReviewType {
 ```
 
 **Access Patterns**:
-- Get review by ID: Query by `PK = reviewId`
-- List reviews for target: Query GSI by `targetId`, sort by `createdAt`
-- List reviews by author: Query GSI by `authorId`
+- Get review by target and author: Query by `PK = targetId`, `SK = authorId`
+- List reviews for target: Query by `PK = targetId`, sort by `SK` (authorId)
+- List reviews by author: Query GSI by `authorId`, sort by `createdAt`
 
 ---
 
@@ -1183,10 +1174,6 @@ mutation CreateUser($input: CreateUserInput!) {
 mutation UpdateUserProfile($userId: ID!, $input: UpdateUserInput!) {
   updateUserProfile(userId: $userId, input: $input): User!
 }
-
-mutation UpdateUserPreferences($userId: ID!, $preferences: UserPreferencesInput!) {
-  updateUserPreferences(userId: $userId, preferences: $preferences): User!
-}
 ```
 
 **Session Mutations:**
@@ -1309,6 +1296,14 @@ mutation MarkAllNotificationsRead($userId: ID!) {
 - **SK**: `createdAt`
 - **Purpose**: List users by role (e.g., all mentors)
 - **Projection**: All attributes
+
+**GSI 4: UsersByInterest**
+- **Table**: `Users`
+- **PK**: `interest` (individual interest value from Set)
+- **SK**: `createdAt`
+- **Purpose**: Search users by interest (e.g., find all users interested in "Product Design")
+- **Projection**: All attributes
+- **Note**: Requires denormalization - each user interest creates a separate GSI entry
 
 ---
 
@@ -1443,19 +1438,14 @@ mutation MarkAllNotificationsRead($userId: ID!) {
 
 **Reviews Table:**
 
-**GSI 1: ReviewsByTarget**
-- **Table**: `Reviews`
-- **PK**: `targetId`
-- **SK**: `createdAt`
-- **Purpose**: Query all reviews for a user (for rating calculation)
-- **Projection**: All attributes
-
-**GSI 2: ReviewsByAuthor**
+**GSI 1: ReviewsByAuthor**
 - **Table**: `Reviews`
 - **PK**: `authorId`
 - **SK**: `createdAt`
 - **Purpose**: Query all reviews written by a user
 - **Projection**: All attributes
+
+**Note**: Primary table structure uses `PK = targetId` and `SK = authorId`, allowing efficient queries for "all reviews for a target" without needing a GSI. GSI is only needed for "reviews by author" pattern.
 
 ---
 

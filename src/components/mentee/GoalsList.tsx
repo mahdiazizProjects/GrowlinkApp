@@ -15,7 +15,7 @@ export default function GoalsList({ userId }: GoalsListProps) {
   const [newGoal, setNewGoal] = useState({ title: '', description: '', category: '' })
 
   useEffect(() => {
-    const filtered = goals.filter(g => g.userId === userId && g.status === 'active')
+    const filtered = goals.filter(g => g.userId === userId && (g.status === 'ACTIVE' || g.status === 'active'))
     setUserGoals(filtered.slice(0, 3)) // Show top 3
   }, [goals, userId])
 
@@ -28,7 +28,7 @@ export default function GoalsList({ userId }: GoalsListProps) {
         description: newGoal.description,
         category: newGoal.category,
         progress: 0,
-        status: 'active',
+        status: 'ACTIVE',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       }
@@ -129,7 +129,7 @@ export default function GoalsList({ userId }: GoalsListProps) {
         </div>
       )}
 
-      {goals.filter(g => g.userId === userId && g.status === 'active').length > 3 && (
+      {goals.filter(g => g.userId === userId && (g.status === 'ACTIVE' || g.status === 'active')).length > 3 && (
         <Link
           to="/goals"
           className="mt-4 flex items-center justify-center gap-2 text-primary-600 hover:text-primary-700 font-semibold text-sm"

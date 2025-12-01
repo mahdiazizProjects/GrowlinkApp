@@ -133,7 +133,7 @@ export default function Dashboard() {
   }
 
   // If user is a mentor, show enhanced mentor dashboard
-  if (user.role === 'mentor') {
+  if (user.role === 'MENTOR' || user.role === 'mentor') {
     const feedbackStats = getMentorFeedbackStats(user.id)
     const mentorFeedbacks = sessionFeedbacks.filter(f => f.mentorId === user.id)
     const mentorStats = getMentorStats(user.id)

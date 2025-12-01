@@ -35,13 +35,16 @@ export default function DailyReflectionBanner({ userId }: DailyReflectionBannerP
       return
     }
 
+    // Ensure mood is set - default to NEUTRAL if not selected but text is provided
+    const moodValue = selectedMood || 'NEUTRAL'
+
     setIsSaving(true)
     try {
       const reflection: Reflection = {
         id: `reflection-${Date.now()}`,
         userId,
         date: today,
-        mood: selectedMood as any,
+        mood: moodValue as 'GREAT' | 'GOOD' | 'NEUTRAL' | 'BAD' | 'AWFUL',
         moodScore: moodScore,
         text: text.trim(),
         content: text.trim(), // Keep for backward compatibility

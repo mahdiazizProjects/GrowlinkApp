@@ -24,9 +24,16 @@ dist-ssr
 *.sw?
 
 # AWS Amplify
-# amplify/
-.amplifyrc
-amplify.config.js
+amplify/.config/
+amplify/hooks/
 amplify_outputs.json
-aws-exports.js
+.amplify/
+.amplify/**/*
+.amplify/artifacts/cdk.out/
+.aws/
+.env.amplify
+# CDK build artifacts
+**/cdk.out/
+**/cdk.out/**
+*.cdk.out
 

@@ -30,7 +30,7 @@ export default function Navbar() {
           </Link>
 
           {/* Navigation Links - Hidden for mentees */}
-          {(!currentUser || currentUser.role !== 'mentee') && (
+          {(!currentUser || (currentUser.role !== 'MENTEE' && currentUser.role !== 'mentee')) && (
             <div className="hidden md:flex items-center space-x-1">
               <NavLink to="/" icon={<Home size={18} />} active={isActive('/')}>
                 Home
@@ -53,7 +53,7 @@ export default function Navbar() {
           {/* Habit Features (when logged in) */}
           {currentUser && (
             <div className="hidden lg:flex items-center space-x-1 mr-4">
-              {currentUser.role === 'mentee' && (
+              {(currentUser.role === 'MENTEE' || currentUser.role === 'mentee') && (
                 <NavLink to="/mentee-home" icon={<Home size={18} />} active={isActive('/mentee-home')}>
                   Home
                 </NavLink>
@@ -80,7 +80,7 @@ export default function Navbar() {
                   </span>
                 )}
                 {/* Notifications for mentors */}
-                {currentUser.role === 'mentor' && (
+                {(currentUser.role === 'MENTOR' || currentUser.role === 'mentor') && (
                   <NotificationSystem
                     notifications={notifications.filter(n => n.userId === currentUser.id)}
                     unreadCount={getUnreadNotificationCount(currentUser.id)}
