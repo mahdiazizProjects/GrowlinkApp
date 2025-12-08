@@ -49,6 +49,7 @@ export default function DailyReflectionBanner({ userId }: DailyReflectionBannerP
         text: text.trim(),
         content: text.trim(), // Keep for backward compatibility
         isShared: false,
+        visibility: 'private', // Daily reflections are private by default
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       }

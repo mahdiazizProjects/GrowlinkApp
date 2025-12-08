@@ -42,7 +42,7 @@ function App() {
               <Route path="/book/:mentorId" element={<BookSession />} />
               <Route path="/goals" element={<Goals />} />
               <Route path="/habits" element={<Habits />} />
-              <Route path="/reflections" element={<Reflections />} />
+              <Route path="/journeys" element={<Reflections />} />
               <Route path="/become-mentor" element={<BecomeMentor />} />
               <Route path="/about" element={<About />} />
               <Route path="/contact" element={<Contact />} />

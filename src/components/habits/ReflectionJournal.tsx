@@ -30,6 +30,7 @@ export default function ReflectionJournal({ reflections, goals, onSubmit, curren
       date: new Date().toISOString(),
       mood: 'GOOD', // Default mood as it's required
       isShared: true, // Default to shared
+      visibility: 'private', // Default to private for legacy journal entries
       content: {
         whatWentWell: whatWentWell || undefined,
         whatFeltHard: whatFeltHard || undefined,

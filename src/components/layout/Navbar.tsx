@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
-import { User, MessageCircle, Calendar, MapPin, Home, LogIn, Target, CheckCircle, BookOpen } from 'lucide-react'
+import { User, MessageCircle, Calendar, MapPin, Home, LogIn, Target, CheckCircle, Sparkles } from 'lucide-react'
 import { useApp } from '../../context/AppContext'
 import NotificationSystem from '../notifications/NotificationSystem'
 import { useState } from 'react'
@@ -58,14 +58,14 @@ export default function Navbar() {
                   Home
                 </NavLink>
               )}
+              <NavLink to="/journeys" icon={<Sparkles size={18} />} active={isActive('/journeys')}>
+                Journeys
+              </NavLink>
               <NavLink to="/goals" icon={<Target size={18} />} active={isActive('/goals')}>
                 Goals
               </NavLink>
               <NavLink to="/habits" icon={<CheckCircle size={18} />} active={isActive('/habits')}>
                 Habits
-              </NavLink>
-              <NavLink to="/reflections" icon={<BookOpen size={18} />} active={isActive('/reflections')}>
-                Reflections
               </NavLink>
             </div>
           )}
