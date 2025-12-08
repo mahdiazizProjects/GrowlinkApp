@@ -82,9 +82,27 @@ export interface Event {
   image?: string;
 }
 
+export interface ReflectionComment {
+  id: string;
+  reflectionId: string;
+  userId: string;
+  user?: User;
+  text: string;
+  createdAt: string;
+}
+
+export interface ReflectionReaction {
+  id: string;
+  reflectionId: string;
+  userId: string;
+  type: 'heart' | 'celebrate' | 'support';
+  createdAt: string;
+}
+
 export interface Reflection {
   id: string;
   userId: string;
+  user?: User;
   date: string;
   goalId?: string;
   week?: string; // Legacy field
@@ -96,6 +114,13 @@ export interface Reflection {
     whatFeltHard?: string;
     insights?: string;
   } | string; // Allow both for compatibility
+  // Social media features
+  visibility: 'everyone' | 'mentors' | 'private' | 'selected'; // Sharing visibility
+  selectedMentorIds?: string[]; // For 'selected' visibility
+  tags?: string[]; // Optional tags for categorization
+  reactions?: ReflectionReaction[];
+  comments?: ReflectionComment[];
+  // Legacy fields
   isShared: boolean;
   sharedWithMentorId?: string;
   mentorFeedback?: {

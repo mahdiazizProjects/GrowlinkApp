@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, ReactNode } from 'react'
-import { User, Venue, Session, Event, Rating, Goal, Habit, HabitCompletion, Reflection, Badge, SessionFeedback, MentorFeedbackStats, MentorSessionNotes, Notification, MentorStats, MenteeSummary } from '../types'
+import { User, Venue, Session, Event, Rating, Goal, Habit, HabitCompletion, Reflection, ReflectionComment, ReflectionReaction, Badge, SessionFeedback, MentorFeedbackStats, MentorSessionNotes, Notification, MentorStats, MenteeSummary } from '../types'
+import { mockReflections } from '../data/mockData'
 
 interface AppContextType {
   currentUser: User | null
@@ -26,6 +27,8 @@ interface AppContextType {
   updateHabit: (habitId: string, updates: Partial<Habit>) => void
   toggleHabitCompletion: (habitId: string, date: string) => void
   addReflection: (reflection: Reflection) => void
+  addReactionToReflection: (reflectionId: string, userId: string, type: 'heart' | 'celebrate' | 'support') => void
+  addCommentToReflection: (reflectionId: string, userId: string, text: string) => void
   addBadge: (badge: Badge) => void
   addSessionFeedback: (feedback: SessionFeedback) => void
   getMentorFeedbackStats: (mentorId: string) => MentorFeedbackStats | null
@@ -98,7 +101,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [goals, setGoals] = useState<Goal[]>([])
   const [habits, setHabits] = useState<Habit[]>([])
   const [habitCompletions, setHabitCompletions] = useState<HabitCompletion[]>([])
-  const [reflections, setReflections] = useState<Reflection[]>([])
+  const [reflections, setReflections] = useState<Reflection[]>(mockReflections)
   const [badges, setBadges] = useState<Badge[]>([])
   const [sessionFeedbacks, setSessionFeedbacks] = useState<SessionFeedback[]>([])
   const [mentorSessionNotes, setMentorSessionNotes] = useState<MentorSessionNotes[]>([])
@@ -172,6 +175,68 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const addReflection = (reflection: Reflection) => {
     setReflections([...reflections, reflection])
+  }
+
+  const addReactionToReflection = (reflectionId: string, userId: string, type: 'heart' | 'celebrate' | 'support') => {
+    setReflections(reflections.map(r => {
+      if (r.id !== reflectionId) return r
+
+      // Check if user already reacted
+      const existingReactions = r.reactions || []
+      const userReaction = existingReactions.find(reaction => reaction.userId === userId)
+
+      if (userReaction) {
+        // If same type, remove the reaction (toggle off)
+        if (userReaction.type === type) {
+          return {
+            ...r,
+            reactions: existingReactions.filter(reaction => reaction.userId !== userId)
+          }
+        } else {
+          // Change reaction type
+          return {
+            ...r,
+            reactions: existingReactions.map(reaction =>
+              reaction.userId === userId
+                ? { ...reaction, type }
+                : reaction
+            )
+          }
+        }
+      } else {
+        // Add new reaction
+        const newReaction: ReflectionReaction = {
+          id: `reaction-${Date.now()}`,
+          reflectionId,
+          userId,
+          type,
+          createdAt: new Date().toISOString()
+        }
+        return {
+          ...r,
+          reactions: [...existingReactions, newReaction]
+        }
+      }
+    }))
+  }
+
+  const addCommentToReflection = (reflectionId: string, userId: string, text: string) => {
+    setReflections(reflections.map(r => {
+      if (r.id !== reflectionId) return r
+
+      const newComment: ReflectionComment = {
+        id: `comment-${Date.now()}`,
+        reflectionId,
+        userId,
+        text,
+        createdAt: new Date().toISOString()
+      }
+
+      return {
+        ...r,
+        comments: [...(r.comments || []), newComment]
+      }
+    }))
   }
 
   const addBadge = (badge: Badge) => {
@@ -359,6 +424,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       updateHabit,
       toggleHabitCompletion,
       addReflection,
+      addReactionToReflection,
+      addCommentToReflection,
       addBadge,
       addSessionFeedback,
       getMentorFeedbackStats,
