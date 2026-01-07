@@ -12,13 +12,16 @@ import MentorAnalytics from '../components/mentor/MentorAnalytics'
 import NotificationSystem from '../components/notifications/NotificationSystem'
 import MenteeProfileModal from '../components/mentor/MenteeProfileModal'
 import MenteeDashboard from '../components/mentee/MenteeDashboard'
-import { mockMentors } from '../data/mockData'
+import * as api from '../services/api'
 import { Session, SessionFeedback, MentorSessionNotes, MenteeSummary } from '../types'
+import { seedMentors } from '../utils/seedData'
+import { mockMentees } from '../data/mockData'
 
 export default function Dashboard() {
   const {
     currentUser,
     setCurrentUser,
+    loading,
     sessions,
     sessionFeedbacks,
     notifications,
@@ -38,31 +41,83 @@ export default function Dashboard() {
   const [selectedMentee, setSelectedMentee] = useState<MenteeSummary | null>(null)
   const [activeMentorTab, setActiveMentorTab] = useState<'dashboard' | 'mentees' | 'analytics'>('dashboard')
 
-  // Mock login for demo
-  const handleLogin = (role: 'mentee' | 'mentor' = 'mentee') => {
+  // Mock login for demo - will be replaced with actual auth
+  const handleLogin = async (role: 'mentee' | 'mentor' = 'mentee') => {
     if (role === 'mentor') {
-      // Use the actual mentor from mockMentors (Sarah Chen with id '1')
-      // This ensures sessions booked with this mentor will show up in the dashboard
-      const mentor = mockMentors[0] // Sarah Chen
-      setCurrentUser(mentor)
+      // Fetch first available mentor from API
+      let mentors = await api.listMentors()
+      
+      // If no mentors exist, seed the database with mock mentors
+      if (mentors.length === 0) {
+        console.log('No mentors found. Seeding database...')
+        await seedMentors()
+        // Fetch mentors again after seeding
+        mentors = await api.listMentors()
+      }
+      
+      if (mentors.length > 0) {
+        setCurrentUser(mentors[0])
+      } else {
+        console.error('Failed to seed mentors or no mentors available')
+        alert('Unable to sign in as mentor. Please check the console for errors.')
+      }
     } else {
-      setCurrentUser({
-        id: 'user-1',
-        username: 'alexjohnson',
-        name: 'Alex Johnson',
-        email: 'alex@example.com',
-        role: 'mentee',
-        avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=400',
-        bio: 'Aspiring designer looking to grow in product design.',
-        location: 'New York, NY',
-        skills: ['Design', 'Learning'],
-        membershipTier: 'premium',
-        verified: true,
-        createdAt: '2024-01-01'
-      })
+      // For demo, get or create a test mentee user in the database
+      try {
+        // Try to find existing mentee users
+        const allUsers = await api.listUsers()
+        let mentee = allUsers.find(u => 
+          (u.role === 'MENTEE' || u.role === 'mentee') && 
+          u.email === 'alex@example.com'
+        )
+        
+        // If no mentee exists, create one from mock data
+        if (!mentee) {
+          const mockMentee = mockMentees[0] // Use first mock mentee
+          const createdMentee = await api.createUser({
+            username: mockMentee.username,
+            email: mockMentee.email,
+            name: mockMentee.name,
+            role: 'MENTEE',
+            bio: mockMentee.bio,
+            avatar: mockMentee.avatar,
+            location: mockMentee.location,
+            skills: mockMentee.skills || [],
+            interests: [],
+          })
+          
+          if (createdMentee) {
+            mentee = createdMentee
+            console.log('✓ Created demo mentee user:', createdMentee.name)
+          } else {
+            console.error('Failed to create mentee user')
+            alert('Unable to sign in as mentee. Please check the console for errors.')
+            return
+          }
+        }
+        
+        if (mentee) {
+          setCurrentUser(mentee)
+        }
+      } catch (error) {
+        console.error('Error signing in as mentee:', error)
+        alert('Unable to sign in as mentee. Please check the console for errors.')
+      }
     }
   }
 
+
+  // Show loading state while checking for user
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    )
+  }
 
   // Show login screen if not logged in
   if (!currentUser) {
