@@ -279,9 +279,11 @@ export async function createGoal(input: Partial<Goal>): Promise<Goal | null> {
 
 export async function updateGoal(goalId: string, updates: Partial<Goal>): Promise<Goal | null> {
   try {
+    // Filter out status field as it was removed from schema
+    const { status, ...validUpdates } = updates;
     const { data } = await getClient().models.Goal.update({
       id: goalId,
-      ...updates,
+      ...validUpdates,
     });
     if (!data) return null;
     return mapGoalFromAPI(data);
@@ -311,10 +313,11 @@ export async function deleteGoal(goalId: string): Promise<boolean> {
 
 export async function listHabits(userId?: string, goalId?: string): Promise<Habit[]> {
   try {
-    const filter: any = {};
-    if (userId) filter.userId = { eq: userId };
-    if (goalId) filter.goalId = { eq: goalId };
-    const { data } = await getClient().models.Todo.list(Object.keys(filter).length > 0 ? filter : undefined);
+    const filterObj: any = {};
+    if (userId) filterObj.userId = { eq: userId };
+    if (goalId) filterObj.goalId = { eq: goalId };
+    const filter = Object.keys(filterObj).length > 0 ? { filter: filterObj } : undefined;
+    const { data } = await getClient().models.Todo.list(filter);
     // Note: Habits are stored as Todos in current schema - this needs to be updated when schema changes
     return (data || []).map(mapHabitFromAPI);
   } catch (error) {
@@ -472,14 +475,15 @@ export async function listActionPlans(assigneeId?: string, creatorId?: string): 
   try {
     // Since users create plans for themselves, we can filter by assigneeId
     // If both are provided and different, we'd need OR logic, but for now we'll prioritize assigneeId
-    const filter: any = {};
+    const filterObj: any = {};
     if (assigneeId) {
-      filter.assigneeId = { eq: assigneeId };
+      filterObj.assigneeId = { eq: assigneeId };
     } else if (creatorId) {
-      filter.creatorId = { eq: creatorId };
+      filterObj.creatorId = { eq: creatorId };
     }
     
-    const { data } = await getClient().models.ActionPlan.list(Object.keys(filter).length > 0 ? filter : undefined);
+    const filter = Object.keys(filterObj).length > 0 ? { filter: filterObj } : undefined;
+    const { data } = await getClient().models.ActionPlan.list(filter);
     return data || [];
   } catch (error) {
     console.error('Error listing action plans:', error);

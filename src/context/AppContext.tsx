@@ -218,11 +218,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
               relatedId: created.id,
               createdAt: new Date().toISOString()
             }
-            setNotifications([notification, ...notifications])
+            setNotifications(prev => [notification, ...prev])
           }
         } else {
           // Fallback: just add to local state if no current user
-          setSessions([...sessions, created])
+          setSessions(prev => [...prev, created])
         }
       }
     } catch (error) {
@@ -235,7 +235,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     try {
       const updated = await api.updateSession(sessionId, updates)
       if (updated) {
-        setSessions(sessions.map(s => s.id === sessionId ? updated : s))
+        setSessions(prev => prev.map(s => s.id === sessionId ? updated : s))
       }
     } catch (error) {
       console.error('Error updating session:', error)
@@ -254,7 +254,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     try {
       const created = await api.createGoal(goal)
       if (created) {
-        setGoals([...goals, created])
+        setGoals(prev => [...prev, created])
       }
     } catch (error) {
       console.error('Error creating goal:', error)
@@ -265,7 +265,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     try {
       const updated = await api.updateGoal(goalId, updates)
       if (updated) {
-        setGoals(goals.map(g => g.id === goalId ? updated : g))
+        setGoals(prev => prev.map(g => g.id === goalId ? updated : g))
       }
     } catch (error) {
       console.error('Error updating goal:', error)
@@ -287,7 +287,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     try {
       const created = await api.createHabit(habit)
       if (created) {
-        setHabits([...habits, created])
+        setHabits(prev => [...prev, created])
       }
     } catch (error) {
       console.error('Error creating habit:', error)
@@ -327,7 +327,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     try {
       const created = await api.createReflection(reflection)
       if (created) {
-        setReflections([...reflections, created])
+        setReflections(prev => [...prev, created])
       }
     } catch (error) {
       console.error('Error creating reflection:', error)

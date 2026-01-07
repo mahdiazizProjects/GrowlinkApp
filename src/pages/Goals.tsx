@@ -7,22 +7,11 @@ import ActionPlanBuilder from '../components/habits/ActionPlanBuilder'
 import { Goal, Habit } from '../types'
 
 export default function Goals() {
-  const { currentUser, goals, habits, addGoal, updateGoal, removeGoal, addHabit } = useApp()
+  const { currentUser, goals, habits, addGoal, removeGoal, addHabit } = useApp()
   const [isIdentityModalOpen, setIsIdentityModalOpen] = useState(false)
   const [selectedGoal, setSelectedGoal] = useState<Goal | null>(null)
   const [showActionPlan, setShowActionPlan] = useState(false)
   const [goalActionPlans, setGoalActionPlans] = useState<Record<string, string>>({}) // goalId -> actionPlanId
-
-  if (!currentUser) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
-        <div className="max-w-md w-full bg-white rounded-xl shadow-lg p-8 text-center">
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">Please Sign In</h1>
-          <p className="text-gray-600">You need to be signed in to view your goals.</p>
-        </div>
-      </div>
-    )
-  }
 
   // Fetch action plans for user's goals
   useEffect(() => {
@@ -92,6 +81,17 @@ export default function Goals() {
     
     fetchActionPlans()
   }, [currentUser?.id, goals, habits])
+
+  if (!currentUser) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+        <div className="max-w-md w-full bg-white rounded-xl shadow-lg p-8 text-center">
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">Please Sign In</h1>
+          <p className="text-gray-600">You need to be signed in to view your goals.</p>
+        </div>
+      </div>
+    )
+  }
 
   const userGoals = goals.filter(g => g.userId === currentUser.id)
   const activeGoals = userGoals.filter(g => g.status === 'active')
@@ -271,11 +271,8 @@ export default function Goals() {
       
       await Promise.all(habitPromises)
       
-      // Update goal status if needed
-      if (selectedGoal.status === 'draft') {
-        console.log('Goals: Updating goal status to active')
-        await updateGoal(selectedGoal.id, { status: 'active' })
-      }
+      // Note: status field removed from Goal schema, so we don't update it here
+      // Goals are considered active once they have an action plan
       
       setShowActionPlan(false)
       setSelectedGoal(null)
