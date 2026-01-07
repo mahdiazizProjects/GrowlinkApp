@@ -365,3 +365,6 @@ function GettingStartedCard({ icon, title, description, link, completed }: Getti
     </Link>
   )
 }
+
+
+

@@ -1,38 +1,52 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Calendar, Video, MapPin, Clock, CheckCircle, Zap } from 'lucide-react'
-import { mockMentors } from '../data/mockData'
+import * as api from '../services/api'
 import { useApp } from '../context/AppContext'
+import { User } from '../types'
 
 export default function BookSession() {
   const { mentorId } = useParams()
   const navigate = useNavigate()
   const { venues, addSession, currentUser } = useApp()
+  const [mentor, setMentor] = useState<User | null>(null)
+  const [loading, setLoading] = useState(true)
 
-  const mentor = mockMentors.find(m => m.id === mentorId)
+  useEffect(() => {
+    const loadMentor = async () => {
+      if (!mentorId) {
+        setLoading(false)
+        return
+      }
+      setLoading(true)
+      try {
+        const mentorData = await api.getUser(mentorId)
+        if (mentorData) {
+          // Verify the user is actually a mentor
+          const isMentor = mentorData.role === 'MENTOR' || mentorData.role === 'mentor' || mentorData.role === 'BOTH'
+          if (isMentor) {
+            setMentor(mentorData)
+          } else {
+            console.error('User is not a mentor:', mentorData)
+            setMentor(null)
+          }
+        } else {
+          setMentor(null)
+        }
+      } catch (error) {
+        console.error('Error loading mentor:', error)
+        setMentor(null)
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadMentor()
+  }, [mentorId])
   const [sessionType, setSessionType] = useState<'virtual' | 'in-person'>('in-person')
   const [selectedVenue, setSelectedVenue] = useState<string>('')
   const [date, setDate] = useState('')
   const [time, setTime] = useState('')
   const [topic, setTopic] = useState('')
-
-  if (!mentor) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Mentor not found</h1>
-          <button onClick={() => navigate('/mentors')} className="text-primary-600 hover:underline">
-            Back to mentors
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  const virtualPrice = 75
-  const inPersonPrice = 50
-  const price = sessionType === 'in-person' ? inPersonPrice : virtualPrice
-  const discount = sessionType === 'in-person' ? virtualPrice - inPersonPrice : 0
 
   // Generate 15-minute time slots
   const generateTimeSlots = (selectedDate: string): string[] => {
@@ -73,123 +87,125 @@ export default function BookSession() {
 
   const timeSlots = useMemo(() => generateTimeSlots(date), [date])
 
-  // Handle "Book Now" - complete the entire booking process immediately
-  const handleBookNow = () => {
-    if (!currentUser) {
-      alert('Please sign in to book a session')
-      return
+  if (loading || !mentor || !currentUser) {
+    if (loading) {
+      return (
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto mb-4"></div>
+            <p className="text-gray-600">Loading mentor...</p>
+          </div>
+        </div>
+      )
     }
+    if (!mentor) {
+      return (
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+          <div className="max-w-md w-full bg-white rounded-xl shadow-lg p-8 text-center">
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">Mentor Not Found</h1>
+            <p className="text-gray-600 mb-6">The mentor you're looking for doesn't exist or is no longer available.</p>
+            <button 
+              onClick={() => navigate('/mentors')} 
+              className="w-full px-6 py-3 bg-primary-600 text-white rounded-lg font-semibold hover:bg-primary-700 transition-colors"
+            >
+              Browse Mentors
+            </button>
+          </div>
+        </div>
+      )
+    }
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+        <div className="max-w-md w-full bg-white rounded-xl shadow-lg p-8 text-center">
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">Sign In Required</h1>
+          <p className="text-gray-600 mb-6">Please sign in to book a session</p>
+          <button
+            onClick={() => navigate('/dashboard')}
+            className="w-full px-6 py-3 bg-primary-600 text-white rounded-lg font-semibold hover:bg-primary-700 transition-colors"
+          >
+            Go to Sign In
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  const virtualPrice = 75
+  const inPersonPrice = 50
+  const price = sessionType === 'in-person' ? inPersonPrice : virtualPrice
+  const discount = sessionType === 'in-person' ? virtualPrice - inPersonPrice : 0
+
+  // Handle "Book Now" - complete the entire booking process immediately
+  const handleBookNow = async () => {
+    if (!currentUser || !mentor) return
 
     const now = new Date()
     const today = new Date().toISOString().split('T')[0]
-
-    // Calculate next 15-minute slot
     const nextSlot = Math.ceil(now.getMinutes() / 15) * 15
     let nextHour = now.getHours()
-    let nextMin = nextSlot
+    let nextMin = nextSlot >= 60 ? 0 : nextSlot
+    if (nextSlot >= 60) nextHour += 1
 
-    if (nextMin >= 60) {
-      nextHour += 1
-      nextMin = 0
-    }
+    const bookingDate = nextHour >= 20 
+      ? new Date(Date.now() + 86400000).toISOString().split('T')[0]
+      : today
+    const bookingTime = nextHour >= 20 ? '09:00' : `${String(nextHour).padStart(2, '0')}:${String(nextMin).padStart(2, '0')}`
 
-    let bookingDate = today
-    let bookingTime = ''
-
-    // If it's after 8 PM, set to tomorrow 9 AM
-    if (nextHour >= 20) {
-      const tomorrow = new Date()
-      tomorrow.setDate(tomorrow.getDate() + 1)
-      bookingDate = tomorrow.toISOString().split('T')[0]
-      bookingTime = '09:00'
-    } else {
-      bookingTime = `${nextHour.toString().padStart(2, '0')}:${nextMin.toString().padStart(2, '0')}`
-    }
-
-    // Generate slots to validate the time
     const slots = generateTimeSlots(bookingDate)
-    const validTime = slots.length > 0 && slots.includes(bookingTime)
-      ? bookingTime
-      : slots.length > 0
-        ? slots[0]
-        : '09:00'
+    const validTime = slots.length > 0 && slots.includes(bookingTime) ? bookingTime : slots[0] || '09:00'
+    const finalTopic = topic || `Quick session with ${mentor.name}`
 
-    // For in-person sessions, auto-select first venue if available
-    let finalVenueId = selectedVenue
-    if (sessionType === 'in-person' && !finalVenueId && venues.length > 0) {
-      finalVenueId = venues[0].id
-    }
-
-    // Check if we have all required fields
-    if (!topic) {
-      // If no topic, prompt user or use a default
-      const defaultTopic = `Quick session with ${mentor.name}`
-      const userTopic = prompt(`What would you like to discuss? (Leave empty for "${defaultTopic}")`)
-      if (userTopic === null) {
-        return // User cancelled
-      }
-      setTopic(userTopic || defaultTopic)
-    }
-
-    // Create the session
+    const sessionDateTime = new Date(`${bookingDate}T${validTime}:00`)
     const newSession = {
-      id: `session-${Date.now()}`,
       mentorId: mentor.id,
       menteeId: currentUser.id,
-      mentor,
-      mentee: currentUser,
-      type: sessionType,
-      venueId: sessionType === 'in-person' ? finalVenueId : undefined,
-      venue: sessionType === 'in-person' ? venues.find(v => v.id === finalVenueId) : undefined,
-      date: bookingDate,
-      time: validTime,
+      date: sessionDateTime.toISOString(),
       duration: 60,
       status: 'pending' as const,
-      price,
-      topic: topic || `Quick session with ${mentor.name}`
+      notes: finalTopic,
+      meetingLink: sessionType === 'virtual' ? `https://meet.example.com/${Date.now()}` : undefined,
     }
 
-    addSession(newSession)
-    alert('Session booked successfully!')
-    navigate('/dashboard')
+    try {
+      await addSession(newSession as any)
+      alert('Session booked successfully!')
+      navigate('/dashboard')
+    } catch (error) {
+      console.error('Error booking session:', error)
+      alert('Failed to book session. Please try again.')
+    }
   }
 
-  const handleBooking = () => {
+  const handleBooking = async () => {
+    if (!currentUser || !mentor) return
     if (!date || !time || !topic) {
       alert('Please fill in all fields')
       return
     }
-
     if (sessionType === 'in-person' && !selectedVenue) {
       alert('Please select a venue')
       return
     }
 
-    if (!currentUser) {
-      alert('Please sign in to book a session')
-      return
-    }
-
+    const sessionDateTime = new Date(`${date}T${time}:00`)
     const newSession = {
-      id: `session-${Date.now()}`,
       mentorId: mentor.id,
       menteeId: currentUser.id,
-      mentor,
-      mentee: currentUser,
-      type: sessionType,
-      venueId: sessionType === 'in-person' ? selectedVenue : undefined,
-      venue: sessionType === 'in-person' ? venues.find(v => v.id === selectedVenue) : undefined,
-      date,
-      time,
+      date: sessionDateTime.toISOString(),
       duration: 60,
       status: 'pending' as const,
-      price,
-      topic
+      notes: topic,
+      meetingLink: sessionType === 'virtual' ? `https://meet.example.com/${Date.now()}` : undefined,
     }
 
-    addSession(newSession)
-    alert('Session booked successfully!')
-    navigate('/dashboard')
+    try {
+      await addSession(newSession as any)
+      alert('Session booked successfully!')
+      navigate('/dashboard')
+    } catch (error) {
+      console.error('Error booking session:', error)
+      alert('Failed to book session. Please try again.')
+    }
   }
 
   return (
@@ -198,11 +214,17 @@ export default function BookSession() {
         {/* Header */}
         <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
           <div className="flex items-center space-x-4">
-            <img
-              src={mentor.avatar}
-              alt={mentor.name}
-              className="w-16 h-16 rounded-full object-cover"
-            />
+            {mentor.avatar ? (
+              <img
+                src={mentor.avatar}
+                alt={mentor.name}
+                className="w-16 h-16 rounded-full object-cover"
+              />
+            ) : (
+              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-white text-2xl font-bold">
+                {mentor.name.charAt(0)}
+              </div>
+            )}
             <div>
               <h1 className="text-2xl font-bold text-gray-900">Book Session with {mentor.name}</h1>
               <p className="text-gray-600 mb-4">{(mentor.bio || 'No bio available').substring(0, 60)}...</p>

@@ -1,4 +1,4 @@
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { User, MessageCircle, Calendar, MapPin, Home, LogIn, Target, CheckCircle, Sparkles } from 'lucide-react'
 import { useApp } from '../../context/AppContext'
 import NotificationSystem from '../notifications/NotificationSystem'
@@ -7,14 +7,19 @@ import UserProfile from '../profile/UserProfile'
 
 export default function Navbar() {
   const location = useLocation()
+  const navigate = useNavigate()
   const { currentUser, setCurrentUser, notifications, getUnreadNotificationCount, markNotificationAsRead } = useApp()
   const [showProfile, setShowProfile] = useState(false)
 
   const isActive = (path: string) => location.pathname === path
+  const isMentor = currentUser && (currentUser.role === 'MENTOR' || currentUser.role === 'mentor')
+  const isMentee = currentUser && (currentUser.role === 'MENTEE' || currentUser.role === 'mentee')
 
   const handleLogout = () => {
     setCurrentUser(null)
     setShowProfile(false)
+    // Redirect to dashboard/login page
+    navigate('/dashboard')
   }
 
   return (
@@ -29,8 +34,9 @@ export default function Navbar() {
             <span className="text-2xl font-bold text-gradient">GrowLink</span>
           </Link>
 
-          {/* Navigation Links - Hidden for mentees */}
-          {(!currentUser || (currentUser.role !== 'MENTEE' && currentUser.role !== 'mentee')) && (
+          {/* Navigation Links - Show different nav based on role */}
+          {!currentUser && (
+            // Public navigation (not logged in)
             <div className="hidden md:flex items-center space-x-1">
               <NavLink to="/" icon={<Home size={18} />} active={isActive('/')}>
                 Home
@@ -50,14 +56,21 @@ export default function Navbar() {
             </div>
           )}
 
-          {/* Habit Features (when logged in) */}
-          {currentUser && (
+          {/* Mentor Navigation - Simplified */}
+          {isMentor && (
+            <div className="hidden md:flex items-center space-x-1">
+              <NavLink to="/dashboard" icon={<Home size={18} />} active={isActive('/dashboard')}>
+                Dashboard
+              </NavLink>
+            </div>
+          )}
+
+          {/* Mentee Navigation - Habit Features */}
+          {isMentee && (
             <div className="hidden lg:flex items-center space-x-1 mr-4">
-              {(currentUser.role === 'MENTEE' || currentUser.role === 'mentee') && (
-                <NavLink to="/mentee-home" icon={<Home size={18} />} active={isActive('/mentee-home')}>
-                  Home
-                </NavLink>
-              )}
+              <NavLink to="/mentee-home" icon={<Home size={18} />} active={isActive('/mentee-home')}>
+                Home
+              </NavLink>
               <NavLink to="/journeys" icon={<Sparkles size={18} />} active={isActive('/journeys')}>
                 Journeys
               </NavLink>
@@ -80,23 +93,26 @@ export default function Navbar() {
                   </span>
                 )}
                 {/* Notifications for mentors */}
-                {(currentUser.role === 'MENTOR' || currentUser.role === 'mentor') && (
+                {isMentor && (
                   <NotificationSystem
                     notifications={notifications.filter(n => n.userId === currentUser.id)}
                     unreadCount={getUnreadNotificationCount(currentUser.id)}
                     onMarkAsRead={markNotificationAsRead}
                   />
                 )}
-                <Link
-                  to="/dashboard"
-                  className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
-                    isActive('/dashboard')
-                      ? 'bg-primary-100 text-primary-700'
-                      : 'text-gray-700 hover:bg-gray-100'
-                  }`}
-                >
-                  <span className="hidden md:inline">Dashboard</span>
-                </Link>
+                {/* Dashboard link - only show for mentees (mentors see it in main nav) */}
+                {isMentee && (
+                  <Link
+                    to="/dashboard"
+                    className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
+                      isActive('/dashboard')
+                        ? 'bg-primary-100 text-primary-700'
+                        : 'text-gray-700 hover:bg-gray-100'
+                    }`}
+                  >
+                    <span className="hidden md:inline">Dashboard</span>
+                  </Link>
+                )}
                 <button
                   onClick={() => setShowProfile(true)}
                   className="w-10 h-10 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-white font-semibold hover:from-primary-500 hover:to-primary-700 transition-all cursor-pointer"

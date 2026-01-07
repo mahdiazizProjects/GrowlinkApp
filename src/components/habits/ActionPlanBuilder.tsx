@@ -1,27 +1,88 @@
-import { useState } from 'react'
-import { Plus, X, Clock, Calendar, MapPin, Gift } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Plus, X, Clock, Calendar, MapPin, Gift, Trash2 } from 'lucide-react'
 import { Habit, Goal } from '../../types'
+import * as api from '../../services/api'
 
 interface ActionPlanBuilderProps {
   goal: Goal
   existingHabits?: Habit[]
-  onSave: (habits: Omit<Habit, 'id' | 'createdAt' | 'updatedAt'>[]) => void
+  existingActionPlanId?: string
+  onSave: (habits: Omit<Habit, 'id' | 'createdAt' | 'updatedAt'>[], actionPlanId?: string) => void
+  onDelete?: (actionPlanId: string) => void
   onClose: () => void
 }
 
-export default function ActionPlanBuilder({ goal, existingHabits = [], onSave, onClose }: ActionPlanBuilderProps) {
-  const [habits, setHabits] = useState<Array<Partial<Habit>>>(existingHabits.length > 0 
-    ? existingHabits.map(h => ({ ...h }))
-    : [{
-        title: '',
-        description: '',
-        frequency: 'daily' as const,
-        duration: 2,
-        cue: { time: '', place: '', context: '' },
-        reward: '',
-        status: 'active' as const
-      }]
-  )
+export default function ActionPlanBuilder({ goal, existingHabits = [], existingActionPlanId, onSave, onDelete, onClose }: ActionPlanBuilderProps) {
+  const [habits, setHabits] = useState<Array<Partial<Habit & { actionItemId?: string }>>>([])
+  const [loading, setLoading] = useState(!!existingActionPlanId)
+
+  useEffect(() => {
+    const loadActionPlan = async () => {
+      if (existingActionPlanId) {
+        setLoading(true)
+        try {
+          const actionItems = await api.listActionItems(existingActionPlanId)
+          if (actionItems.length > 0) {
+            // Convert ActionItems to Habits format
+            const loadedHabits = actionItems.map(item => ({
+              actionItemId: item.id,
+              title: item.title,
+              description: item.description || '',
+              frequency: item.frequency === 'WEEKLY' ? 'weekly' as const : 'daily' as const,
+              duration: 2, // Default since ActionItem doesn't have duration
+              cue: { time: '', place: '', context: '' }, // Not stored in ActionItem
+              reward: '', // Not stored in ActionItem
+              status: item.status === 'ACTIVE' ? 'active' as const : item.status === 'PAUSED' ? 'paused' as const : 'completed' as const
+            }))
+            setHabits(loadedHabits)
+          } else {
+            // No items found, start with empty habit
+            setHabits([{
+              title: '',
+              description: '',
+              frequency: 'daily' as const,
+              duration: 2,
+              cue: { time: '', place: '', context: '' },
+              reward: '',
+              status: 'active' as const
+            }])
+          }
+        } catch (error) {
+          console.error('Error loading action plan:', error)
+          // Fallback to existing habits or empty
+          setHabits(existingHabits.length > 0 
+            ? existingHabits.map(h => ({ ...h }))
+            : [{
+                title: '',
+                description: '',
+                frequency: 'daily' as const,
+                duration: 2,
+                cue: { time: '', place: '', context: '' },
+                reward: '',
+                status: 'active' as const
+              }]
+          )
+        } finally {
+          setLoading(false)
+        }
+      } else {
+        // No existing plan, use existing habits or start fresh
+        setHabits(existingHabits.length > 0 
+          ? existingHabits.map(h => ({ ...h }))
+          : [{
+              title: '',
+              description: '',
+              frequency: 'daily' as const,
+              duration: 2,
+              cue: { time: '', place: '', context: '' },
+              reward: '',
+              status: 'active' as const
+            }]
+        )
+      }
+    }
+    loadActionPlan()
+  }, [existingActionPlanId, existingHabits])
 
   const addHabit = () => {
     setHabits([...habits, {
@@ -44,6 +105,8 @@ export default function ActionPlanBuilder({ goal, existingHabits = [], onSave, o
   }
 
   const handleSave = () => {
+    console.log('ActionPlanBuilder: handleSave called, habits:', habits)
+    
     const validHabits = habits
       .filter(h => h.title && h.duration)
       .map(h => ({
@@ -54,17 +117,56 @@ export default function ActionPlanBuilder({ goal, existingHabits = [], onSave, o
         duration: h.duration || 2,
         cue: h.cue || { time: '', place: '', context: '' },
         reward: h.reward,
-        status: h.status || 'active'
+        status: h.status || 'active',
+        // Preserve actionItemId if it exists (for matching existing items)
+        ...(h.actionItemId && { actionItemId: h.actionItemId })
       }))
     
-    onSave(validHabits)
+    console.log('ActionPlanBuilder: validHabits:', validHabits)
+    
+    // Allow saving with 0 habits - this will delete all items from the plan
+    // If it's a new plan with 0 habits, we still need at least one
+    if (validHabits.length === 0 && !existingActionPlanId) {
+      alert('Please add at least one habit with a title and duration')
+      return
+    }
+    
+    console.log('ActionPlanBuilder: Calling onSave with', validHabits.length, 'habits')
+    onSave(validHabits, existingActionPlanId)
     onClose()
+  }
+
+  const handleDeletePlan = async () => {
+    if (!existingActionPlanId) {
+      return
+    }
+
+    if (!confirm('Are you sure you want to delete this entire action plan? This will remove all habits associated with it.')) {
+      return
+    }
+
+    if (onDelete) {
+      onDelete(existingActionPlanId)
+    }
+    onClose()
+  }
+
+  if (loading) {
+    return (
+      <div className="bg-white rounded-xl shadow-lg p-6">
+        <div className="text-center py-8">
+          <p className="text-gray-600">Loading action plan...</p>
+        </div>
+      </div>
+    )
   }
 
   return (
     <div className="bg-white rounded-xl shadow-lg p-6">
       <div className="mb-6">
-        <h2 className="text-2xl font-bold text-gray-900 mb-2">Create 1% Action Plan</h2>
+        <h2 className="text-2xl font-bold text-gray-900 mb-2">
+          {existingActionPlanId ? 'Edit' : 'Create'} 1% Action Plan
+        </h2>
         <p className="text-gray-600">Break down "{goal.title}" into small, actionable habits</p>
       </div>
 
@@ -73,14 +175,13 @@ export default function ActionPlanBuilder({ goal, existingHabits = [], onSave, o
           <div key={index} className="border-2 border-gray-200 rounded-lg p-5">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900">Habit {index + 1}</h3>
-              {habits.length > 1 && (
-                <button
-                  onClick={() => removeHabit(index)}
-                  className="p-1 hover:bg-red-50 rounded text-red-600 transition-colors"
-                >
-                  <X size={18} />
-                </button>
-              )}
+              <button
+                onClick={() => removeHabit(index)}
+                className="p-1 hover:bg-red-50 rounded text-red-600 transition-colors"
+                title="Remove this habit"
+              >
+                <X size={18} />
+              </button>
             </div>
 
             <div className="space-y-4">
@@ -202,13 +303,24 @@ export default function ActionPlanBuilder({ goal, existingHabits = [], onSave, o
       </div>
 
       <div className="flex items-center justify-between pt-4 border-t border-gray-200">
-        <button
-          onClick={addHabit}
-          className="flex items-center gap-2 px-4 py-2 text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
-        >
-          <Plus size={18} />
-          Add Another Habit
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={addHabit}
+            className="flex items-center gap-2 px-4 py-2 text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
+          >
+            <Plus size={18} />
+            Add Another Habit
+          </button>
+          {existingActionPlanId && (
+            <button
+              onClick={handleDeletePlan}
+              className="flex items-center gap-2 px-4 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+            >
+              <Trash2 size={18} />
+              Delete Plan
+            </button>
+          )}
+        </div>
         <div className="flex gap-3">
           <button
             onClick={onClose}

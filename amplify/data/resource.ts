@@ -60,7 +60,6 @@ const schema = a.schema({
     category: a.string(),
     progress: a.integer(),
     dueDate: a.date(),
-    status: a.enum(['DRAFT', 'PENDING_APPROVAL', 'ACTIVE', 'COMPLETED', 'ARCHIVED']),
     todos: a.hasMany('Todo', 'goalId'),
   }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
 

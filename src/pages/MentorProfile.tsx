@@ -1,16 +1,74 @@
+import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { Star, MapPin, CheckCircle, Calendar, Users, Award } from 'lucide-react'
-import { mockMentors } from '../data/mockData'
+import * as api from '../services/api'
+import type { User, Session } from '../types'
 
 export default function MentorProfile() {
   const { id } = useParams()
-  const mentor = mockMentors.find(m => m.id === id)
+  const [mentor, setMentor] = useState<User | null>(null)
+  const [sessions, setSessions] = useState<Session[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  if (!mentor) {
+  useEffect(() => {
+    const fetchMentor = async () => {
+      if (!id) {
+        setError('No mentor ID provided')
+        setLoading(false)
+        return
+      }
+
+      try {
+        setLoading(true)
+        setError(null)
+        
+        // Fetch mentor and sessions in parallel
+        const [mentorData, sessionsData] = await Promise.all([
+          api.getUser(id),
+          api.listSessionsForUser(id, 'mentor')
+        ])
+        
+        if (!mentorData) {
+          setError('Mentor not found')
+        } else if (mentorData.role !== 'MENTOR' && mentorData.role !== 'mentor' && mentorData.role !== 'BOTH') {
+          setError('User is not a mentor')
+        } else {
+          setMentor(mentorData)
+          setSessions(sessionsData || [])
+        }
+      } catch (err) {
+        console.error('Error fetching mentor:', err)
+        setError('Failed to load mentor profile')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchMentor()
+  }, [id])
+
+  // Calculate stats from sessions
+  const totalSessions = sessions.length
+  const inPersonSessions = sessions.filter(s => s.type === 'in-person').length
+  const completedSessions = sessions.filter(s => s.status === 'completed' || s.status === 'COMPLETED').length
+
+  if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Mentor not found</h1>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading mentor profile...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (error || !mentor) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">{error || 'Mentor not found'}</h1>
           <Link to="/mentors" className="text-primary-600 hover:underline">
             Back to mentors
           </Link>
@@ -25,11 +83,17 @@ export default function MentorProfile() {
         {/* Header */}
         <div className="bg-white rounded-xl shadow-lg p-8 mb-6">
           <div className="flex flex-col md:flex-row items-start md:items-center space-y-4 md:space-y-0 md:space-x-6">
-            <img
-              src={mentor.avatar}
-              alt={mentor.name}
-              className="w-32 h-32 rounded-full object-cover border-4 border-primary-200"
-            />
+            {mentor.avatar ? (
+              <img
+                src={mentor.avatar}
+                alt={mentor.name}
+                className="w-32 h-32 rounded-full object-cover border-4 border-primary-200"
+              />
+            ) : (
+              <div className="w-32 h-32 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center border-4 border-primary-200">
+                <span className="text-white text-4xl font-bold">{mentor.name.charAt(0)}</span>
+              </div>
+            )}
             <div className="flex-1">
               <div className="flex items-center space-x-3 mb-2">
                 <h1 className="text-3xl font-bold text-gray-900">{mentor.name}</h1>
@@ -42,17 +106,22 @@ export default function MentorProfile() {
                   </span>
                 )}
               </div>
-              <div className="flex items-center space-x-1 text-gray-600 mb-3">
-                <MapPin size={18} />
-                <span>{mentor.location}</span>
-              </div>
-              <div className="flex items-center space-x-4">
-                <div className="flex items-center space-x-1">
-                  <Star className="text-gold-500 fill-gold-500" size={20} />
-                  <span className="text-xl font-semibold">{mentor.rating}</span>
+              {mentor.location && (
+                <div className="flex items-center space-x-1 text-gray-600 mb-3">
+                  <MapPin size={18} />
+                  <span>{mentor.location}</span>
                 </div>
+              )}
+              <div className="flex items-center space-x-4">
+                {mentor.rating && (
+                  <div className="flex items-center space-x-1">
+                    <Star className="text-gold-500 fill-gold-500" size={20} />
+                    <span className="text-xl font-semibold">{mentor.rating}</span>
+                  </div>
+                )}
                 <span className="text-gray-600">
-                  {mentor.totalSessions} sessions • {mentor.inPersonSessions} in-person
+                  {totalSessions} {totalSessions === 1 ? 'session' : 'sessions'}
+                  {inPersonSessions > 0 && ` • ${inPersonSessions} in-person`}
                 </span>
               </div>
             </div>
@@ -99,14 +168,21 @@ export default function MentorProfile() {
                     <Users className="text-primary-600" size={20} />
                     <span className="text-sm text-gray-600">Total Sessions</span>
                   </div>
-                  <p className="text-2xl font-bold text-gray-900">{mentor.totalSessions}</p>
+                  <p className="text-2xl font-bold text-gray-900">{totalSessions}</p>
                 </div>
                 <div className="bg-gold-50 rounded-lg p-4">
                   <div className="flex items-center space-x-2 mb-2">
                     <MapPin className="text-gold-600" size={20} />
                     <span className="text-sm text-gray-600">In-Person</span>
                   </div>
-                  <p className="text-2xl font-bold text-gray-900">{mentor.inPersonSessions}</p>
+                  <p className="text-2xl font-bold text-gray-900">{inPersonSessions}</p>
+                </div>
+                <div className="bg-green-50 rounded-lg p-4">
+                  <div className="flex items-center space-x-2 mb-2">
+                    <CheckCircle className="text-green-600" size={20} />
+                    <span className="text-sm text-gray-600">Completed</span>
+                  </div>
+                  <p className="text-2xl font-bold text-gray-900">{completedSessions}</p>
                 </div>
               </div>
             </div>

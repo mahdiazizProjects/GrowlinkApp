@@ -1,13 +1,31 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { Search, Filter, Star, MapPin, CheckCircle } from 'lucide-react'
-import { mockMentors } from '../data/mockData'
+import * as api from '../services/api'
+import { User } from '../types'
 
 export default function BrowseMentors() {
   const [searchTerm, setSearchTerm] = useState('')
   const [filterTier, setFilterTier] = useState<string>('all')
+  const [mentors, setMentors] = useState<User[]>([])
+  const [loading, setLoading] = useState(true)
 
-  const filteredMentors = mockMentors.filter(mentor => {
+  useEffect(() => {
+    const loadMentors = async () => {
+      setLoading(true)
+      try {
+        const mentorsData = await api.listMentors()
+        setMentors(mentorsData)
+      } catch (error) {
+        console.error('Error loading mentors:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadMentors()
+  }, [])
+
+  const filteredMentors = mentors.filter(mentor => {
     const matchesSearch = mentor.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (mentor.skills || []).some(skill => skill.toLowerCase().includes(searchTerm.toLowerCase())) ||
       (mentor.bio || '').toLowerCase().includes(searchTerm.toLowerCase())
@@ -56,9 +74,17 @@ export default function BrowseMentors() {
           </div>
         </div>
 
+        {/* Loading State */}
+        {loading && (
+          <div className="text-center py-12">
+            <p className="text-gray-600">Loading mentors...</p>
+          </div>
+        )}
+
         {/* Mentors Grid */}
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredMentors.map((mentor) => (
+        {!loading && (
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredMentors.map((mentor) => (
             <Link
               key={mentor.id}
               to={`/mentors/${mentor.id}`}
@@ -115,10 +141,11 @@ export default function BrowseMentors() {
                 )}
               </div>
             </Link>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
 
-        {filteredMentors.length === 0 && (
+        {!loading && filteredMentors.length === 0 && (
           <div className="text-center py-12">
             <p className="text-gray-600 text-lg">No mentors found matching your criteria.</p>
           </div>

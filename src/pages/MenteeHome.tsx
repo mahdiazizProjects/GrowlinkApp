@@ -1,6 +1,6 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useApp } from '../context/AppContext'
-import { mockMentors } from '../data/mockData'
+import * as api from '../services/api'
 import ProfileCard from '../components/mentee/ProfileCard'
 import GoalsList from '../components/mentee/GoalsList'
 import DailyReflectionBanner from '../components/mentee/DailyReflectionBanner'
@@ -8,17 +8,35 @@ import FeedFilters from '../components/mentee/FeedFilters'
 import MentorCard from '../components/mentee/MentorCard'
 import TodosPanel from '../components/mentee/TodosPanel'
 import NotificationMenu from '../components/mentee/NotificationMenu'
+import { User } from '../types'
 
 export default function MenteeHome() {
   const { currentUser } = useApp()
   const [selectedCategory, setSelectedCategory] = useState<string>('All')
   const [searchQuery, setSearchQuery] = useState<string>('')
+  const [mentors, setMentors] = useState<User[]>([])
+  const [loadingMentors, setLoadingMentors] = useState(true)
+
+  useEffect(() => {
+    const loadMentors = async () => {
+      setLoadingMentors(true)
+      try {
+        const mentorsData = await api.listMentors()
+        setMentors(mentorsData)
+      } catch (error) {
+        console.error('Error loading mentors:', error)
+      } finally {
+        setLoadingMentors(false)
+      }
+    }
+    loadMentors()
+  }, [])
 
   // Recommendation logic: tag matching + category filtering + search
   const recommendedMentors = useMemo(() => {
-    if (!currentUser) return []
+    if (!currentUser || loadingMentors) return []
 
-    let filtered = mockMentors.filter(mentor => mentor.role === 'MENTOR' || mentor.role === 'mentor')
+    let filtered = mentors.filter(mentor => mentor.role === 'MENTOR' || mentor.role === 'mentor')
 
     // Category filtering
     if (selectedCategory !== 'All') {
@@ -73,7 +91,7 @@ export default function MenteeHome() {
       .sort((a, b) => b.score - a.score)
       .slice(0, 6)
       .map(item => item.mentor)
-  }, [currentUser, selectedCategory, searchQuery])
+  }, [currentUser, selectedCategory, searchQuery, mentors, loadingMentors])
 
   if (!currentUser) {
     return (

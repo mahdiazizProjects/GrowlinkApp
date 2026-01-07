@@ -1,10 +1,11 @@
-import { createContext, useContext, useState, ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 import { User, Venue, Session, Event, Rating, Goal, Habit, HabitCompletion, Reflection, ReflectionComment, ReflectionReaction, Badge, SessionFeedback, MentorFeedbackStats, MentorSessionNotes, Notification, MentorStats, MenteeSummary } from '../types'
-import { mockReflections } from '../data/mockData'
+import * as api from '../services/api'
 
 interface AppContextType {
   currentUser: User | null
   setCurrentUser: (user: User | null) => void
+  loading: boolean
   venues: Venue[]
   sessions: Session[]
   events: Event[]
@@ -17,20 +18,21 @@ interface AppContextType {
   sessionFeedbacks: SessionFeedback[]
   mentorSessionNotes: MentorSessionNotes[]
   notifications: Notification[]
-  addSession: (session: Session) => void
-  updateSession: (sessionId: string, updates: Partial<Session>) => void
+  addSession: (session: Session) => Promise<void>
+  updateSession: (sessionId: string, updates: Partial<Session>) => Promise<void>
   addEvent: (event: Event) => void
   addRating: (rating: Rating) => void
-  addGoal: (goal: Goal) => void
-  updateGoal: (goalId: string, updates: Partial<Goal>) => void
-  addHabit: (habit: Habit) => void
-  updateHabit: (habitId: string, updates: Partial<Habit>) => void
+  addGoal: (goal: Goal) => Promise<void>
+  updateGoal: (goalId: string, updates: Partial<Goal>) => Promise<void>
+  removeGoal: (goalId: string) => Promise<void>
+  addHabit: (habit: Habit) => Promise<void>
+  updateHabit: (habitId: string, updates: Partial<Habit>) => Promise<void>
   toggleHabitCompletion: (habitId: string, date: string) => void
-  addReflection: (reflection: Reflection) => void
+  addReflection: (reflection: Reflection) => Promise<void>
   addReactionToReflection: (reflectionId: string, userId: string, type: 'heart' | 'celebrate' | 'support') => void
   addCommentToReflection: (reflectionId: string, userId: string, text: string) => void
   addBadge: (badge: Badge) => void
-  addSessionFeedback: (feedback: SessionFeedback) => void
+  addSessionFeedback: (feedback: SessionFeedback) => Promise<void>
   getMentorFeedbackStats: (mentorId: string) => MentorFeedbackStats | null
   addMentorSessionNotes: (notes: MentorSessionNotes) => void
   updateMentorSessionNotes: (noteId: string, updates: Partial<MentorSessionNotes>) => void
@@ -53,80 +55,191 @@ export const useApp = () => {
 }
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [currentUser, setCurrentUser] = useState<User | null>(null)
+  const [currentUser, setCurrentUserState] = useState<User | null>(null)
+  const [loading, setLoading] = useState(true)
 
-  // Mock data - in real app, this would come from API
-  const [venues] = useState<Venue[]>([
-    {
-      id: '1',
-      name: 'Central Library',
-      type: 'library',
-      address: '123 Main St',
-      city: 'New York',
-      capacity: 50,
-      amenities: ['WiFi', 'Meeting Rooms', 'Coffee', 'Parking'],
-      image: 'https://images.unsplash.com/photo-1481627834876-b7833e8f5570?w=800',
-      isPartner: true,
-      partnershipTier: 'gold'
-    },
-    {
-      id: '2',
-      name: 'TechHub Co-working',
-      type: 'co-working',
-      address: '456 Innovation Ave',
-      city: 'San Francisco',
-      capacity: 30,
-      amenities: ['WiFi', 'Phone Booths', 'Kitchen', 'Printing'],
-      image: 'https://images.unsplash.com/photo-1497366216548-37526070297c?w=800',
-      isPartner: true,
-      partnershipTier: 'silver'
-    },
-    {
-      id: '3',
-      name: 'Community Center Downtown',
-      type: 'community-center',
-      address: '789 Community Way',
-      city: 'Seattle',
-      capacity: 100,
-      amenities: ['WiFi', 'Large Hall', 'Kitchen', 'Parking'],
-      image: 'https://images.unsplash.com/photo-1511578314322-379afb476865?w=800',
-      isPartner: true,
-      partnershipTier: 'bronze'
+  // Wrapper function to sync user state with localStorage
+  const setCurrentUser = (user: User | null) => {
+    setCurrentUserState(user)
+    if (user) {
+      localStorage.setItem('currentUserId', user.id)
+    } else {
+      localStorage.removeItem('currentUserId')
     }
-  ])
+  }
 
+  // Restore user from localStorage on app load
+  useEffect(() => {
+    const restoreUser = async () => {
+      try {
+        const storedUserId = localStorage.getItem('currentUserId')
+        if (storedUserId) {
+          const user = await api.getUser(storedUserId)
+          if (user) {
+            setCurrentUser(user)
+            console.log('✓ Restored user session:', user.name)
+          } else {
+            // User not found, clear invalid ID
+            localStorage.removeItem('currentUserId')
+            setLoading(false)
+          }
+        } else {
+          // No stored user, set loading to false
+          setLoading(false)
+        }
+      } catch (error) {
+        console.error('Error restoring user session:', error)
+        localStorage.removeItem('currentUserId')
+        setLoading(false)
+      }
+    }
+
+    restoreUser()
+  }, [])
+
+  // Data from API
+  const [venues, setVenues] = useState<Venue[]>([])
   const [sessions, setSessions] = useState<Session[]>([])
   const [events, setEvents] = useState<Event[]>([])
   const [ratings, setRatings] = useState<Rating[]>([])
   const [goals, setGoals] = useState<Goal[]>([])
   const [habits, setHabits] = useState<Habit[]>([])
   const [habitCompletions, setHabitCompletions] = useState<HabitCompletion[]>([])
-  const [reflections, setReflections] = useState<Reflection[]>(mockReflections)
+  const [reflections, setReflections] = useState<Reflection[]>([])
   const [badges, setBadges] = useState<Badge[]>([])
   const [sessionFeedbacks, setSessionFeedbacks] = useState<SessionFeedback[]>([])
   const [mentorSessionNotes, setMentorSessionNotes] = useState<MentorSessionNotes[]>([])
   const [notifications, setNotifications] = useState<Notification[]>([])
 
-  const addSession = (session: Session) => {
-    setSessions([...sessions, session])
-    // Create notification for mentor when session is booked
-    if (session.mentorId && currentUser?.id !== session.mentorId) {
-      const notification: Notification = {
-        id: `notif-${Date.now()}`,
-        userId: session.mentorId,
-        title: 'New Session Booked',
-        message: `${session.mentee?.name || 'Mentee'} booked a session with you on ${new Date(session.date).toLocaleDateString()}`,
-        type: 'session-booked',
-        read: false,
-        relatedId: session.id,
-        createdAt: new Date().toISOString()
+  // Load initial data when user changes
+  useEffect(() => {
+    const loadData = async () => {
+      setLoading(true)
+      try {
+        // Load venues (static for now - will be added to schema)
+        setVenues([
+          {
+            id: '1',
+            name: 'Central Library',
+            type: 'library',
+            address: '123 Main St',
+            city: 'New York',
+            capacity: 50,
+            amenities: ['WiFi', 'Meeting Rooms', 'Coffee', 'Parking'],
+            image: 'https://images.unsplash.com/photo-1481627834876-b7833e8f5570?w=800',
+            isPartner: true,
+            partnershipTier: 'gold'
+          },
+          {
+            id: '2',
+            name: 'TechHub Co-working',
+            type: 'co-working',
+            address: '456 Innovation Ave',
+            city: 'San Francisco',
+            capacity: 30,
+            amenities: ['WiFi', 'Phone Booths', 'Kitchen', 'Printing'],
+            image: 'https://images.unsplash.com/photo-1497366216548-37526070297c?w=800',
+            isPartner: true,
+            partnershipTier: 'silver'
+          },
+          {
+            id: '3',
+            name: 'Community Center Downtown',
+            type: 'community-center',
+            address: '789 Community Way',
+            city: 'Seattle',
+            capacity: 100,
+            amenities: ['WiFi', 'Large Hall', 'Kitchen', 'Parking'],
+            image: 'https://images.unsplash.com/photo-1511578314322-379afb476865?w=800',
+            isPartner: true,
+            partnershipTier: 'bronze'
+          }
+        ])
+
+        // Load user-specific data if logged in
+        if (currentUser?.id) {
+          const [sessionsData, goalsData, habitsData, reflectionsData] = await Promise.all([
+            Promise.all([
+              api.listSessionsForUser(currentUser.id, 'mentor'),
+              api.listSessionsForUser(currentUser.id, 'mentee')
+            ]).then(results => results.flat()),
+            api.listGoals(currentUser.id),
+            api.listHabits(currentUser.id),
+            api.listReflections(currentUser.id),
+          ])
+          
+          setSessions(sessionsData)
+          setGoals(goalsData)
+          setHabits(habitsData)
+          setReflections(reflectionsData)
+        } else {
+          // Load public data
+          const sessionsData = await api.listSessions()
+          setSessions(sessionsData)
+        }
+
+        // Load events
+        const eventsData = await api.listEvents()
+        setEvents(eventsData)
+      } catch (error) {
+        console.error('Error loading data:', error)
+      } finally {
+        setLoading(false)
       }
-      setNotifications([notification, ...notifications])
+    }
+
+    loadData()
+  }, [currentUser?.id])
+
+  const addSession = async (session: Session) => {
+    try {
+      const created = await api.createSession(session)
+      if (created) {
+        // Reload sessions from database to ensure we have the latest data with all relationships
+        if (currentUser?.id) {
+          const [mentorSessions, menteeSessions] = await Promise.all([
+            api.listSessionsForUser(currentUser.id, 'mentor'),
+            api.listSessionsForUser(currentUser.id, 'mentee')
+          ])
+          const allSessions = [...mentorSessions, ...menteeSessions]
+          setSessions(allSessions)
+          
+          // Create notification for mentor when session is booked
+          if (created.mentorId && currentUser.id !== created.mentorId) {
+            // Fetch mentee name for notification
+            const mentee = await api.getUser(created.menteeId)
+            const notification: Notification = {
+              id: `notif-${Date.now()}`,
+              userId: created.mentorId,
+              title: 'New Session Booked',
+              message: `${mentee?.name || 'A mentee'} booked a session with you on ${new Date(created.date).toLocaleDateString()}`,
+              type: 'session-booked',
+              read: false,
+              relatedId: created.id,
+              createdAt: new Date().toISOString()
+            }
+            setNotifications([notification, ...notifications])
+          }
+        } else {
+          // Fallback: just add to local state if no current user
+          setSessions([...sessions, created])
+        }
+      }
+    } catch (error) {
+      console.error('Error creating session:', error)
+      throw error // Re-throw so calling code can handle it
     }
   }
 
-  const updateSession = (sessionId: string, updates: Partial<Session>) => {
-    setSessions(sessions.map(s => s.id === sessionId ? { ...s, ...updates } : s))
+  const updateSession = async (sessionId: string, updates: Partial<Session>) => {
+    try {
+      const updated = await api.updateSession(sessionId, updates)
+      if (updated) {
+        setSessions(sessions.map(s => s.id === sessionId ? updated : s))
+      }
+    } catch (error) {
+      console.error('Error updating session:', error)
+    }
   }
 
   const addEvent = (event: Event) => {
@@ -137,20 +250,57 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setRatings([...ratings, rating])
   }
 
-  const addGoal = (goal: Goal) => {
-    setGoals([...goals, goal])
+  const addGoal = async (goal: Goal) => {
+    try {
+      const created = await api.createGoal(goal)
+      if (created) {
+        setGoals([...goals, created])
+      }
+    } catch (error) {
+      console.error('Error creating goal:', error)
+    }
   }
 
-  const updateGoal = (goalId: string, updates: Partial<Goal>) => {
-    setGoals(goals.map(g => g.id === goalId ? { ...g, ...updates, updatedAt: new Date().toISOString() } : g))
+  const updateGoal = async (goalId: string, updates: Partial<Goal>) => {
+    try {
+      const updated = await api.updateGoal(goalId, updates)
+      if (updated) {
+        setGoals(goals.map(g => g.id === goalId ? updated : g))
+      }
+    } catch (error) {
+      console.error('Error updating goal:', error)
+    }
   }
 
-  const addHabit = (habit: Habit) => {
-    setHabits([...habits, habit])
+  const removeGoal = async (goalId: string) => {
+    try {
+      // Remove goal from state
+      setGoals(goals.filter(g => g.id !== goalId))
+      // Also remove associated habits
+      setHabits(habits.filter(h => h.goalId !== goalId))
+    } catch (error) {
+      console.error('Error removing goal from state:', error)
+    }
   }
 
-  const updateHabit = (habitId: string, updates: Partial<Habit>) => {
-    setHabits(habits.map(h => h.id === habitId ? { ...h, ...updates, updatedAt: new Date().toISOString() } : h))
+  const addHabit = async (habit: Habit) => {
+    try {
+      const created = await api.createHabit(habit)
+      if (created) {
+        setHabits([...habits, created])
+      }
+    } catch (error) {
+      console.error('Error creating habit:', error)
+    }
+  }
+
+  const updateHabit = async (habitId: string, updates: Partial<Habit>) => {
+    try {
+      // Note: Update habit API call needed
+      setHabits(habits.map(h => h.id === habitId ? { ...h, ...updates, updatedAt: new Date().toISOString() } : h))
+    } catch (error) {
+      console.error('Error updating habit:', error)
+    }
   }
 
   const toggleHabitCompletion = (habitId: string, date: string) => {
@@ -173,8 +323,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  const addReflection = (reflection: Reflection) => {
-    setReflections([...reflections, reflection])
+  const addReflection = async (reflection: Reflection) => {
+    try {
+      const created = await api.createReflection(reflection)
+      if (created) {
+        setReflections([...reflections, created])
+      }
+    } catch (error) {
+      console.error('Error creating reflection:', error)
+    }
   }
 
   const addReactionToReflection = (reflectionId: string, userId: string, type: 'heart' | 'celebrate' | 'support') => {
@@ -243,27 +400,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setBadges([...badges, badge])
   }
 
-  const addSessionFeedback = (feedback: SessionFeedback) => {
-    setSessionFeedbacks([...sessionFeedbacks, feedback])
-    // Mark session as having feedback submitted
-    setSessions(sessions.map(s =>
-      s.id === feedback.sessionId
-        ? { ...s, feedbackSubmitted: true, feedbackSubmittedAt: feedback.createdAt }
-        : s
-    ))
-    // Create notification for mentor
-    const notification: Notification = {
-      id: `notif-${Date.now()}`,
-      userId: feedback.mentorId,
-      title: 'New Feedback Received',
-      message: `You received ${feedback.rating}-star feedback from a mentee`,
-      type: 'feedback-received',
-      read: false,
-      relatedId: feedback.sessionId,
-      createdAt: new Date().toISOString()
+  const addSessionFeedback = async (feedback: SessionFeedback) => {
+    try {
+      // Note: SessionFeedback API calls needed when schema is updated
+      setSessionFeedbacks([...sessionFeedbacks, feedback])
+      // Mark session as having feedback submitted
+      setSessions(sessions.map(s =>
+        s.id === feedback.sessionId
+          ? { ...s, feedbackSubmitted: true, feedbackSubmittedAt: feedback.createdAt }
+          : s
+      ))
+      // Create notification for mentor
+      const notification: Notification = {
+        id: `notif-${Date.now()}`,
+        userId: feedback.mentorId,
+        title: 'New Feedback Received',
+        message: `You received ${feedback.rating}-star feedback from a mentee`,
+        type: 'feedback-received',
+        read: false,
+        relatedId: feedback.sessionId,
+        createdAt: new Date().toISOString()
+      }
+      setNotifications([notification, ...notifications])
+      // In a real app, you'd update the mentor's rating in the database
+    } catch (error) {
+      console.error('Error adding session feedback:', error)
     }
-    setNotifications([notification, ...notifications])
-    // In a real app, you'd update the mentor's rating in the database
   }
 
   const getMentorFeedbackStats = (mentorId: string): MentorFeedbackStats | null => {
@@ -402,6 +564,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     <AppContext.Provider value={{
       currentUser,
       setCurrentUser,
+      loading,
       venues,
       sessions,
       events,
@@ -420,6 +583,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       addRating,
       addGoal,
       updateGoal,
+      removeGoal,
       addHabit,
       updateHabit,
       toggleHabitCompletion,
