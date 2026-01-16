@@ -1,10 +1,13 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react'
+import { fetchUserAttributes, getCurrentUser, signOut } from 'aws-amplify/auth'
 import { User, Venue, Session, Event, Rating, Goal, Habit, HabitCompletion, Reflection, ReflectionComment, ReflectionReaction, Badge, SessionFeedback, MentorFeedbackStats, MentorSessionNotes, Notification, MentorStats, MenteeSummary } from '../types'
 import * as api from '../services/api'
 
 interface AppContextType {
   currentUser: User | null
   setCurrentUser: (user: User | null) => void
+  refreshCurrentUser: () => Promise<User | null>
+  logout: () => Promise<void>
   loading: boolean
   venues: Venue[]
   sessions: Session[]
@@ -58,44 +61,55 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUserState] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
 
-  // Wrapper function to sync user state with localStorage
   const setCurrentUser = (user: User | null) => {
     setCurrentUserState(user)
-    if (user) {
-      localStorage.setItem('currentUserId', user.id)
-    } else {
-      localStorage.removeItem('currentUserId')
-    }
   }
 
-  // Restore user from localStorage on app load
-  useEffect(() => {
-    const restoreUser = async () => {
-      try {
-        const storedUserId = localStorage.getItem('currentUserId')
-        if (storedUserId) {
-          const user = await api.getUser(storedUserId)
-          if (user) {
-            setCurrentUser(user)
-            console.log('✓ Restored user session:', user.name)
-          } else {
-            // User not found, clear invalid ID
-            localStorage.removeItem('currentUserId')
-            setLoading(false)
-          }
-        } else {
-          // No stored user, set loading to false
-          setLoading(false)
-        }
-      } catch (error) {
-        console.error('Error restoring user session:', error)
-        localStorage.removeItem('currentUserId')
-        setLoading(false)
-      }
-    }
+  const refreshCurrentUser = useCallback(async (): Promise<User | null> => {
+    setLoading(true)
+    try {
+      const authUser = await getCurrentUser()
+      const attributes = await fetchUserAttributes()
+      const userId = authUser.userId
+      const email = attributes.email || authUser.username
+      const name = attributes.name || email?.split('@')[0] || 'New User'
 
-    restoreUser()
+      let dbUser = await api.getUser(userId)
+      if (!dbUser) {
+        dbUser = await api.createUser({
+          id: userId,
+          email: email || '',
+          name,
+          username: email?.split('@')[0] || authUser.username,
+          role: 'MENTEE'
+        })
+      }
+      if (dbUser) {
+        setCurrentUser(dbUser)
+        return dbUser
+      }
+      setCurrentUser(null)
+      return null
+    } catch (error) {
+      setCurrentUser(null)
+      return null
+    } finally {
+      setLoading(false)
+    }
   }, [])
+
+  const logout = useCallback(async () => {
+    try {
+      await signOut()
+    } finally {
+      setCurrentUser(null)
+    }
+  }, [])
+
+  // Restore authenticated user on app load
+  useEffect(() => {
+    refreshCurrentUser()
+  }, [refreshCurrentUser])
 
   // Data from API
   const [venues, setVenues] = useState<Venue[]>([])
@@ -564,6 +578,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     <AppContext.Provider value={{
       currentUser,
       setCurrentUser,
+      refreshCurrentUser,
+      logout,
       loading,
       venues,
       sessions,

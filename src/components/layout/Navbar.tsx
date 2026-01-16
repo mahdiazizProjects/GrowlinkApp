@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { User, MessageCircle, Calendar, MapPin, Home, LogIn, Target, CheckCircle, Sparkles } from 'lucide-react'
+import { User, MessageCircle, Calendar, MapPin, Home, LogIn, Target, CheckCircle, Sparkles, Settings } from 'lucide-react'
 import { useApp } from '../../context/AppContext'
 import NotificationSystem from '../notifications/NotificationSystem'
 import { useState } from 'react'
@@ -8,18 +8,17 @@ import UserProfile from '../profile/UserProfile'
 export default function Navbar() {
   const location = useLocation()
   const navigate = useNavigate()
-  const { currentUser, setCurrentUser, notifications, getUnreadNotificationCount, markNotificationAsRead } = useApp()
+  const { currentUser, logout, notifications, getUnreadNotificationCount, markNotificationAsRead } = useApp()
   const [showProfile, setShowProfile] = useState(false)
 
   const isActive = (path: string) => location.pathname === path
   const isMentor = currentUser && (currentUser.role === 'MENTOR' || currentUser.role === 'mentor')
   const isMentee = currentUser && (currentUser.role === 'MENTEE' || currentUser.role === 'mentee')
 
-  const handleLogout = () => {
-    setCurrentUser(null)
+  const handleLogout = async () => {
+    await logout()
     setShowProfile(false)
-    // Redirect to dashboard/login page
-    navigate('/dashboard')
+    navigate('/auth')
   }
 
   return (
@@ -92,6 +91,17 @@ export default function Navbar() {
                     ✨ Exclusive Member
                   </span>
                 )}
+                <Link
+                  to="/setup"
+                  className={`hidden md:flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
+                    isActive('/setup')
+                      ? 'bg-primary-100 text-primary-700'
+                      : 'text-gray-700 hover:bg-gray-100'
+                  }`}
+                >
+                  <Settings size={18} />
+                  <span>Setup</span>
+                </Link>
                 {/* Notifications for mentors */}
                 {isMentor && (
                   <NotificationSystem
@@ -131,7 +141,7 @@ export default function Navbar() {
               </>
             ) : (
               <Link
-                to="/dashboard"
+                to="/auth"
                 className="flex items-center space-x-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
               >
                 <LogIn size={18} />

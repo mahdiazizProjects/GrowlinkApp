@@ -40,6 +40,7 @@ export async function listUsers(filter?: any): Promise<User[]> {
 export async function createUser(input: Partial<User>): Promise<User | null> {
   try {
     const { data } = await getClient().models.User.create({
+      id: input.id,
       email: input.email || '',
       name: input.name || '',
       username: input.username || input.email?.split('@')[0] || '',
