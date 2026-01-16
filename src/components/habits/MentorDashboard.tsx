@@ -71,9 +71,7 @@ export default function MentorDashboard({
   }, [mentees, goals, habits, reflections, menteeStats])
 
   const getReflectionContent = (reflection: Reflection) => {
-    if (!reflection.content) return 'No content'
-    if (typeof reflection.content === 'string') return reflection.content
-    return reflection.content.whatWentWell || reflection.content.insights || 'No content'
+    return reflection.text || 'No content'
   }
 
   return (

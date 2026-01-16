@@ -1,48 +1,48 @@
 import { useState } from 'react'
 import { Filter, TrendingUp, Clock, Users } from 'lucide-react'
-import { Reflection, User } from '../../types'
-import ReflectionPost from './ReflectionPost'
+import { Journey, User } from '../../types'
+import JourneyPost from './JourneyPost'
 
-interface ReflectionFeedProps {
-  reflections: Reflection[]
+interface JourneyFeedProps {
+  journeys: Journey[]
   currentUser: User
   allUsers: User[]
-  onReact: (reflectionId: string, reactionType: 'heart' | 'celebrate' | 'support') => void
-  onComment: (reflectionId: string, text: string) => void
+  onReact: (journeyId: string, reactionType: 'heart' | 'celebrate' | 'support') => void
+  onComment: (journeyId: string, text: string) => void
 }
 
 type FilterType = 'all' | 'my-posts' | 'mentors' | 'community'
 type SortType = 'recent' | 'popular'
 
-export default function ReflectionFeed({
-  reflections,
+export default function JourneyFeed({
+  journeys,
   currentUser,
   allUsers,
   onReact,
   onComment
-}: ReflectionFeedProps) {
+}: JourneyFeedProps) {
   const [filter, setFilter] = useState<FilterType>('all')
   const [sort, setSort] = useState<SortType>('recent')
 
-  // Get user's mentors (users who have mentored them)
+  // Get user's mentors
   const mentorIds = allUsers
     .filter(u => u.role === 'MENTOR' || u.role === 'mentor' || u.role === 'BOTH')
     .map(u => u.id)
 
-  // Filter reflections based on visibility and user permissions
-  const getVisibleReflections = () => {
-    return reflections.filter(reflection => {
+  // Filter journeys based on visibility and user permissions
+  const getVisibleJourneys = () => {
+    return journeys.filter(journey => {
       // Always show user's own posts
-      if (reflection.userId === currentUser.id) return true
+      if (journey.userId === currentUser.id) return true
 
       // Check visibility settings
-      if (reflection.visibility === 'private') return false
-      if (reflection.visibility === 'everyone') return true
-      if (reflection.visibility === 'mentors') {
+      if (journey.visibility === 'private') return false
+      if (journey.visibility === 'everyone') return true
+      if (journey.visibility === 'mentors') {
         return currentUser.role === 'MENTOR' || currentUser.role === 'mentor' || currentUser.role === 'BOTH'
       }
-      if (reflection.visibility === 'selected' && reflection.selectedMentorIds) {
-        return reflection.selectedMentorIds.includes(currentUser.id)
+      if (journey.visibility === 'selected' && journey.selectedMentorIds) {
+        return journey.selectedMentorIds.includes(currentUser.id)
       }
 
       return false
@@ -50,18 +50,18 @@ export default function ReflectionFeed({
   }
 
   // Apply filters
-  const getFilteredReflections = () => {
-    let filtered = getVisibleReflections()
+  const getFilteredJourneys = () => {
+    let filtered = getVisibleJourneys()
 
     switch (filter) {
       case 'my-posts':
-        filtered = filtered.filter(r => r.userId === currentUser.id)
+        filtered = filtered.filter(j => j.userId === currentUser.id)
         break
       case 'mentors':
-        filtered = filtered.filter(r => mentorIds.includes(r.userId))
+        filtered = filtered.filter(j => mentorIds.includes(j.userId))
         break
       case 'community':
-        filtered = filtered.filter(r => r.visibility === 'everyone')
+        filtered = filtered.filter(j => j.visibility === 'everyone')
         break
       default:
         // 'all' - no additional filtering
@@ -72,8 +72,8 @@ export default function ReflectionFeed({
   }
 
   // Apply sorting
-  const getSortedReflections = () => {
-    const filtered = getFilteredReflections()
+  const getSortedJourneys = () => {
+    const filtered = getFilteredJourneys()
 
     switch (sort) {
       case 'popular':
@@ -90,7 +90,7 @@ export default function ReflectionFeed({
     }
   }
 
-  const displayedReflections = getSortedReflections()
+  const displayedJourneys = getSortedJourneys()
 
   return (
     <div>
@@ -179,32 +179,32 @@ export default function ReflectionFeed({
         {/* Results count */}
         <div className="mt-3 pt-3 border-t border-gray-100">
           <p className="text-sm text-gray-600">
-            Showing {displayedReflections.length} {displayedReflections.length === 1 ? 'reflection' : 'reflections'}
+            Showing {displayedJourneys.length} {displayedJourneys.length === 1 ? 'journey' : 'journeys'}
           </p>
         </div>
       </div>
 
       {/* Feed */}
       <div className="space-y-6">
-        {displayedReflections.length === 0 ? (
+        {displayedJourneys.length === 0 ? (
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
             <div className="max-w-md mx-auto">
               <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
                 <Filter className="text-gray-400" size={32} />
               </div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">No reflections found</h3>
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">No journeys found</h3>
               <p className="text-gray-600">
                 {filter === 'my-posts'
-                  ? "You haven't posted any reflections yet. Share your first thought above!"
-                  : 'Try adjusting your filters to see more reflections.'}
+                  ? "You haven't posted any journeys yet. Share your first thought above!"
+                  : 'Try adjusting your filters to see more journeys.'}
               </p>
             </div>
           </div>
         ) : (
-          displayedReflections.map(reflection => (
-            <ReflectionPost
-              key={reflection.id}
-              reflection={reflection}
+          displayedJourneys.map(journey => (
+            <JourneyPost
+              key={journey.id}
+              journey={journey}
               currentUser={currentUser}
               onReact={onReact}
               onComment={onComment}

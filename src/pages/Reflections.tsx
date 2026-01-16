@@ -1,18 +1,18 @@
 import { useApp } from '../context/AppContext'
-import ReflectionComposer from '../components/reflections/ReflectionComposer'
-import ReflectionFeed from '../components/reflections/ReflectionFeed'
+import JourneyComposer from '../components/journeys/JourneyComposer'
+import JourneyFeed from '../components/journeys/JourneyFeed'
 import { Sparkles } from 'lucide-react'
-import { Reflection, User } from '../types'
+import { Journey, User } from '../types'
 import { mockMentors, mockMentees } from '../data/mockData'
 
 export default function Reflections() {
   const {
     currentUser,
-    reflections,
+    journeys,
     goals,
-    addReflection,
-    addReactionToReflection,
-    addCommentToReflection
+    addJourney,
+    addReactionToJourney,
+    addCommentToJourney
   } = useApp()
 
   if (!currentUser) {
@@ -35,7 +35,7 @@ export default function Reflections() {
 
   const mentors = mockUsers.filter(u => u.role === 'MENTOR' || u.role === 'mentor' || u.role === 'BOTH')
 
-  const handleSubmitReflection = (reflectionData: {
+  const handleSubmitJourney = (journeyData: {
     text: string
     mood: 'GREAT' | 'GOOD' | 'NEUTRAL' | 'BAD' | 'AWFUL'
     visibility: 'everyone' | 'mentors' | 'private' | 'selected'
@@ -43,40 +43,37 @@ export default function Reflections() {
     tags?: string[]
     goalId?: string
   }) => {
-    const newReflection: Reflection = {
-      id: `reflection-${Date.now()}`,
+    const newJourney: Journey = {
+      id: `journey-${Date.now()}`,
       userId: currentUser.id,
       user: currentUser,
-      date: new Date().toISOString().split('T')[0],
-      mood: reflectionData.mood,
-      text: reflectionData.text,
-      content: reflectionData.text,
-      visibility: reflectionData.visibility,
-      selectedMentorIds: reflectionData.selectedMentorIds,
-      tags: reflectionData.tags,
-      goalId: reflectionData.goalId,
-      isShared: reflectionData.visibility !== 'private',
+      mood: journeyData.mood,
+      text: journeyData.text,
+      visibility: journeyData.visibility,
+      selectedMentorIds: journeyData.selectedMentorIds,
+      tags: journeyData.tags,
+      goalId: journeyData.goalId,
       reactions: [],
       comments: [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     }
-    addReflection(newReflection)
+    addJourney(newJourney)
   }
 
-  const handleReact = (reflectionId: string, reactionType: 'heart' | 'celebrate' | 'support') => {
-    addReactionToReflection(reflectionId, currentUser.id, reactionType)
+  const handleReact = (journeyId: string, reactionType: 'heart' | 'celebrate' | 'support') => {
+    addReactionToJourney(journeyId, currentUser.id, reactionType)
   }
 
-  const handleComment = (reflectionId: string, text: string) => {
-    addCommentToReflection(reflectionId, currentUser.id, text)
+  const handleComment = (journeyId: string, text: string) => {
+    addCommentToJourney(journeyId, currentUser.id, text)
   }
 
-  // Enrich reflections with user data
-  const enrichedReflections = reflections.map(reflection => ({
-    ...reflection,
-    user: reflection.user || mockUsers.find(u => u.id === reflection.userId),
-    comments: reflection.comments?.map(comment => ({
+  // Enrich journeys with user data
+  const enrichedJourneys = journeys.map(journey => ({
+    ...journey,
+    user: journey.user || mockUsers.find(u => u.id === journey.userId),
+    comments: journey.comments?.map(comment => ({
       ...comment,
       user: comment.user || mockUsers.find(u => u.id === comment.userId)
     }))
@@ -100,17 +97,17 @@ export default function Reflections() {
 
         {/* Composer */}
         <div className="mb-6">
-          <ReflectionComposer
+          <JourneyComposer
             currentUser={currentUser}
             mentors={mentors}
             goals={goals}
-            onSubmit={handleSubmitReflection}
+            onSubmit={handleSubmitJourney}
           />
         </div>
 
         {/* Feed */}
-        <ReflectionFeed
-          reflections={enrichedReflections}
+        <JourneyFeed
+          journeys={enrichedJourneys}
           currentUser={currentUser}
           allUsers={mockUsers}
           onReact={handleReact}

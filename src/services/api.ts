@@ -1,7 +1,7 @@
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '../../amplify/data/resource';
-import type { 
-  User, Session, Goal, Habit, Reflection, Event, Venue
+import type {
+  User, Session, Goal, Habit, Reflection, Event, Venue, Journey, JourneyReaction, JourneyComment
 } from '../types';
 
 // Lazy-load client to ensure Amplify is configured first
@@ -383,19 +383,12 @@ export async function listReflections(userId?: string): Promise<Reflection[]> {
 
 export async function createReflection(input: Partial<Reflection>): Promise<Reflection | null> {
   try {
-    // Handle content/text - ensure they're strings
-    const textValue = typeof input.text === 'string' ? input.text : 
-                     (typeof input.content === 'string' ? input.content : '');
-    const contentValue = typeof input.content === 'string' ? input.content : textValue;
-    
     const { data } = await getClient().models.Reflection.create({
       userId: input.userId || '',
       date: input.date || new Date().toISOString().split('T')[0],
       mood: input.mood,
       moodScore: input.moodScore,
-      text: textValue,
-      content: contentValue,
-      isShared: input.isShared || false,
+      text: input.text || '',
       sharedWithMentorId: input.sharedWithMentorId,
     });
     if (!data) return null;
@@ -403,6 +396,34 @@ export async function createReflection(input: Partial<Reflection>): Promise<Refl
   } catch (error) {
     console.error('Error creating reflection:', error);
     return null;
+  }
+}
+
+export async function updateReflection(reflectionId: string, updates: Partial<Reflection>): Promise<Reflection | null> {
+  try {
+    const { data } = await getClient().models.Reflection.update({
+      id: reflectionId,
+      ...updates,
+    });
+    if (!data) return null;
+    return mapReflectionFromAPI(data);
+  } catch (error) {
+    console.error('Error updating reflection:', error);
+    return null;
+  }
+}
+
+export async function deleteReflection(reflectionId: string): Promise<boolean> {
+  try {
+    const { errors } = await getClient().models.Reflection.delete({ id: reflectionId });
+    if (errors && errors.length > 0) {
+      console.error('Error deleting reflection:', errors);
+      return false;
+    }
+    return true;
+  } catch (error) {
+    console.error('Error deleting reflection:', error);
+    return false;
   }
 }
 
@@ -631,6 +652,198 @@ export async function listVenues(): Promise<Venue[]> {
   }
 }
 
+// ==================== JOURNEY API ====================
+
+export async function getJourney(journeyId: string): Promise<Journey | null> {
+  try {
+    const { data } = await getClient().models.Journey.get({ id: journeyId });
+    if (!data) return null;
+
+    // Fetch related data using relationships
+    const [reactions, comments] = await Promise.all([
+      data.reactions(),
+      data.comments()
+    ]);
+
+    return mapJourneyFromAPI({
+      ...data,
+      reactions: reactions.data || [],
+      comments: comments.data || []
+    });
+  } catch (error) {
+    console.error('Error fetching journey:', error);
+    return null;
+  }
+}
+
+export async function listJourneys(userId?: string): Promise<Journey[]> {
+  try {
+    const filter = userId ? { filter: { userId: { eq: userId } } } : undefined;
+    const { data } = await getClient().models.Journey.list(filter);
+
+    // Get all journeys with reactions and comments using relationships
+    const journeysWithData = await Promise.all(
+      (data || []).map(async (journey) => {
+        const [reactions, comments] = await Promise.all([
+          journey.reactions(),
+          journey.comments()
+        ]);
+
+        return mapJourneyFromAPI({
+          ...journey,
+          reactions: reactions.data || [],
+          comments: comments.data || []
+        });
+      })
+    );
+
+    return journeysWithData;
+  } catch (error) {
+    console.error('Error listing journeys:', error);
+    return [];
+  }
+}
+
+export async function createJourney(input: Partial<Journey>): Promise<Journey | null> {
+  try {
+    const { data } = await getClient().models.Journey.create({
+      userId: input.userId || '',
+      goalId: input.goalId,
+      mood: input.mood,
+      text: input.text || '',
+      visibility: input.visibility?.toUpperCase() as 'EVERYONE' | 'MENTORS' | 'PRIVATE' | 'SELECTED',
+      selectedMentorIds: input.selectedMentorIds || [],
+      tags: input.tags || [],
+    });
+    if (!data) return null;
+    return mapJourneyFromAPI(data);
+  } catch (error) {
+    console.error('Error creating journey:', error);
+    return null;
+  }
+}
+
+export async function updateJourney(journeyId: string, updates: Partial<Journey>): Promise<Journey | null> {
+  try {
+    const normalizedUpdates: any = { ...updates };
+    if (normalizedUpdates.visibility) {
+      normalizedUpdates.visibility = normalizedUpdates.visibility.toUpperCase();
+    }
+
+    const { data } = await getClient().models.Journey.update({
+      id: journeyId,
+      ...normalizedUpdates,
+    });
+    if (!data) return null;
+    return mapJourneyFromAPI(data);
+  } catch (error) {
+    console.error('Error updating journey:', error);
+    return null;
+  }
+}
+
+export async function deleteJourney(journeyId: string): Promise<boolean> {
+  try {
+    const { errors } = await getClient().models.Journey.delete({ id: journeyId });
+    if (errors && errors.length > 0) {
+      console.error('Error deleting journey:', errors);
+      return false;
+    }
+    return true;
+  } catch (error) {
+    console.error('Error deleting journey:', error);
+    return false;
+  }
+}
+
+// ==================== JOURNEY REACTION API ====================
+
+export async function listJourneyReactions(journeyId: string): Promise<JourneyReaction[]> {
+  try {
+    // Use filter to query by journeyId - Amplify will use GSI automatically via belongsTo relationship
+    const { data } = await getClient().models.JourneyReaction.list({
+      filter: { journeyId: { eq: journeyId } }
+    });
+    return (data || []).map(mapJourneyReactionFromAPI);
+  } catch (error) {
+    console.error('Error listing journey reactions:', error);
+    return [];
+  }
+}
+
+export async function createJourneyReaction(input: { journeyId: string; userId: string; type: 'heart' | 'celebrate' | 'support' }): Promise<JourneyReaction | null> {
+  try {
+    const { data } = await getClient().models.JourneyReaction.create({
+      journeyId: input.journeyId,
+      userId: input.userId,
+      type: input.type.toUpperCase() as 'HEART' | 'CELEBRATE' | 'SUPPORT',
+    });
+    if (!data) return null;
+    return mapJourneyReactionFromAPI(data);
+  } catch (error) {
+    console.error('Error creating journey reaction:', error);
+    return null;
+  }
+}
+
+export async function deleteJourneyReaction(reactionId: string): Promise<boolean> {
+  try {
+    const { errors } = await getClient().models.JourneyReaction.delete({ id: reactionId });
+    if (errors && errors.length > 0) {
+      console.error('Error deleting journey reaction:', errors);
+      return false;
+    }
+    return true;
+  } catch (error) {
+    console.error('Error deleting journey reaction:', error);
+    return false;
+  }
+}
+
+// ==================== JOURNEY COMMENT API ====================
+
+export async function listJourneyComments(journeyId: string): Promise<JourneyComment[]> {
+  try {
+    // Use filter to query by journeyId - Amplify will use GSI automatically via belongsTo relationship
+    const { data } = await getClient().models.JourneyComment.list({
+      filter: { journeyId: { eq: journeyId } }
+    });
+    return (data || []).map(mapJourneyCommentFromAPI);
+  } catch (error) {
+    console.error('Error listing journey comments:', error);
+    return [];
+  }
+}
+
+export async function createJourneyComment(input: { journeyId: string; userId: string; text: string }): Promise<JourneyComment | null> {
+  try {
+    const { data } = await getClient().models.JourneyComment.create({
+      journeyId: input.journeyId,
+      userId: input.userId,
+      text: input.text,
+    });
+    if (!data) return null;
+    return mapJourneyCommentFromAPI(data);
+  } catch (error) {
+    console.error('Error creating journey comment:', error);
+    return null;
+  }
+}
+
+export async function deleteJourneyComment(commentId: string): Promise<boolean> {
+  try {
+    const { errors } = await getClient().models.JourneyComment.delete({ id: commentId });
+    if (errors && errors.length > 0) {
+      console.error('Error deleting journey comment:', errors);
+      return false;
+    }
+    return true;
+  } catch (error) {
+    console.error('Error deleting journey comment:', error);
+    return false;
+  }
+}
+
 // ==================== MAPPING FUNCTIONS ====================
 
 function mapUserFromAPI(data: any): User {
@@ -721,15 +934,50 @@ function mapReflectionFromAPI(data: any): Reflection {
     userId: data.userId,
     date: data.date,
     mood: (data.mood?.toUpperCase() || 'NEUTRAL') as Reflection['mood'],
-    text: data.text || data.content || '',
-    content: data.content || data.text || '',
-    visibility: data.isShared ? 'everyone' : 'private',
-    isShared: data.isShared || false,
-    tags: [],
-    reactions: [],
-    comments: [],
+    text: data.text,
+    sharedWithMentorId: data.sharedWithMentorId,
+    mentorFeedback: data.mentorFeedback,
     createdAt: data.createdAt || new Date().toISOString(),
     updatedAt: data.updatedAt || new Date().toISOString(),
+  };
+}
+
+function mapJourneyFromAPI(data: any): Journey {
+  return {
+    id: data.id,
+    userId: data.userId,
+    user: data.user,
+    goalId: data.goalId,
+    mood: data.mood as Journey['mood'],
+    text: data.text || '',
+    visibility: (data.visibility?.toLowerCase() || 'private') as Journey['visibility'],
+    selectedMentorIds: data.selectedMentorIds || [],
+    tags: data.tags || [],
+    reactions: (data.reactions || []).map(mapJourneyReactionFromAPI),
+    comments: (data.comments || []).map(mapJourneyCommentFromAPI),
+    createdAt: data.createdAt || new Date().toISOString(),
+    updatedAt: data.updatedAt || new Date().toISOString(),
+  };
+}
+
+function mapJourneyReactionFromAPI(data: any): JourneyReaction {
+  return {
+    id: data.id,
+    journeyId: data.journeyId,
+    userId: data.userId,
+    type: data.type?.toLowerCase() as 'heart' | 'celebrate' | 'support',
+    createdAt: data.createdAt || new Date().toISOString(),
+  };
+}
+
+function mapJourneyCommentFromAPI(data: any): JourneyComment {
+  return {
+    id: data.id,
+    journeyId: data.journeyId,
+    userId: data.userId,
+    user: data.user,
+    text: data.text || '',
+    createdAt: data.createdAt || new Date().toISOString(),
   };
 }
 

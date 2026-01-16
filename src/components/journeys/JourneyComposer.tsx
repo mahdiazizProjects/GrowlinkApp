@@ -2,11 +2,11 @@ import { useState } from 'react'
 import { Send, Globe, Lock, Users, X, Smile } from 'lucide-react'
 import { User, Goal } from '../../types'
 
-interface ReflectionComposerProps {
+interface JourneyComposerProps {
   currentUser: User
   mentors: User[]
   goals: Goal[]
-  onSubmit: (reflection: {
+  onSubmit: (journey: {
     text: string
     mood: 'GREAT' | 'GOOD' | 'NEUTRAL' | 'BAD' | 'AWFUL'
     visibility: 'everyone' | 'mentors' | 'private' | 'selected'
@@ -51,12 +51,12 @@ const VISIBILITY_OPTIONS = [
   }
 ]
 
-export default function ReflectionComposer({
+export default function JourneyComposer({
   currentUser,
   mentors,
   goals,
   onSubmit
-}: ReflectionComposerProps) {
+}: JourneyComposerProps) {
   const [text, setText] = useState('')
   const [selectedMood, setSelectedMood] = useState<'GREAT' | 'GOOD' | 'NEUTRAL' | 'BAD' | 'AWFUL'>('GOOD')
   const [visibility, setVisibility] = useState<'everyone' | 'mentors' | 'private' | 'selected'>('everyone')
@@ -303,7 +303,7 @@ export default function ReflectionComposer({
           className="flex items-center gap-2 px-6 py-3 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
         >
           <Send size={18} />
-          Share Reflection
+          Share Journey
         </button>
       </div>
     </div>

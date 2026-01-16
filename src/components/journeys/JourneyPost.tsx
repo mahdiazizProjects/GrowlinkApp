@@ -1,13 +1,13 @@
 import { useState } from 'react'
 import { Heart, MessageCircle, Globe, Lock, Users, Award } from 'lucide-react'
-import { Reflection, User } from '../../types'
+import { Journey, User } from '../../types'
 import { formatDistanceToNow } from 'date-fns'
 
-interface ReflectionPostProps {
-  reflection: Reflection
+interface JourneyPostProps {
+  journey: Journey
   currentUser: User
-  onReact: (reflectionId: string, reactionType: 'heart' | 'celebrate' | 'support') => void
-  onComment: (reflectionId: string, text: string) => void
+  onReact: (journeyId: string, reactionType: 'heart' | 'celebrate' | 'support') => void
+  onComment: (journeyId: string, text: string) => void
   allUsers: User[]
 }
 
@@ -33,47 +33,34 @@ const VISIBILITY_LABELS = {
   selected: 'Selected Mentors'
 }
 
-export default function ReflectionPost({
-  reflection,
+export default function JourneyPost({
+  journey,
   currentUser,
   onReact,
   onComment,
   allUsers
-}: ReflectionPostProps) {
+}: JourneyPostProps) {
   const [showComments, setShowComments] = useState(false)
   const [commentText, setCommentText] = useState('')
 
-  const author = reflection.user || allUsers.find(u => u.id === reflection.userId)
-  const mood = MOODS[reflection.mood]
+  const author = journey.user || allUsers.find(u => u.id === journey.userId)
+  const mood = journey.mood ? MOODS[journey.mood] : undefined
 
   // Get reaction counts
   const reactionCounts = {
-    heart: reflection.reactions?.filter(r => r.type === 'heart').length || 0,
-    celebrate: reflection.reactions?.filter(r => r.type === 'celebrate').length || 0,
-    support: reflection.reactions?.filter(r => r.type === 'support').length || 0
+    heart: journey.reactions?.filter(r => r.type === 'heart').length || 0,
+    celebrate: journey.reactions?.filter(r => r.type === 'celebrate').length || 0,
+    support: journey.reactions?.filter(r => r.type === 'support').length || 0
   }
 
   const totalReactions = reactionCounts.heart + reactionCounts.celebrate + reactionCounts.support
-  const hasUserReacted = reflection.reactions?.some(r => r.userId === currentUser.id)
+  const hasUserReacted = journey.reactions?.some(r => r.userId === currentUser.id)
 
   const handleAddComment = () => {
     if (commentText.trim()) {
-      onComment(reflection.id, commentText)
+      onComment(journey.id, commentText)
       setCommentText('')
     }
-  }
-
-  const getContentText = () => {
-    if (reflection.text) return reflection.text
-    if (typeof reflection.content === 'string') return reflection.content
-    if (typeof reflection.content === 'object') {
-      const parts = []
-      if (reflection.content.whatWentWell) parts.push(`✅ ${reflection.content.whatWentWell}`)
-      if (reflection.content.whatFeltHard) parts.push(`💪 ${reflection.content.whatFeltHard}`)
-      if (reflection.content.insights) parts.push(`💡 ${reflection.content.insights}`)
-      return parts.join('\n\n')
-    }
-    return ''
   }
 
   return (
@@ -94,31 +81,33 @@ export default function ReflectionPost({
               )}
             </div>
             <div className="flex items-center gap-2 text-sm text-gray-500">
-              <span>{formatDistanceToNow(new Date(reflection.createdAt), { addSuffix: true })}</span>
+              <span>{formatDistanceToNow(new Date(journey.createdAt), { addSuffix: true })}</span>
               <span>•</span>
               <div className="flex items-center gap-1">
-                {VISIBILITY_ICONS[reflection.visibility]}
-                <span>{VISIBILITY_LABELS[reflection.visibility]}</span>
+                {VISIBILITY_ICONS[journey.visibility]}
+                <span>{VISIBILITY_LABELS[journey.visibility]}</span>
               </div>
             </div>
           </div>
         </div>
 
         {/* Mood indicator */}
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 rounded-full">
-          <span className="text-xl">{mood.emoji}</span>
-          <span className={`text-sm font-medium ${mood.color}`}>{mood.label}</span>
-        </div>
+        {mood && (
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 rounded-full">
+            <span className="text-xl">{mood.emoji}</span>
+            <span className={`text-sm font-medium ${mood.color}`}>{mood.label}</span>
+          </div>
+        )}
       </div>
 
       {/* Content */}
       <div className="mb-4">
-        <p className="text-gray-800 whitespace-pre-wrap leading-relaxed">{getContentText()}</p>
+        <p className="text-gray-800 whitespace-pre-wrap leading-relaxed">{journey.text}</p>
 
         {/* Tags */}
-        {reflection.tags && reflection.tags.length > 0 && (
+        {journey.tags && journey.tags.length > 0 && (
           <div className="flex flex-wrap gap-2 mt-3">
-            {reflection.tags.map((tag, index) => (
+            {journey.tags.map((tag, index) => (
               <span
                 key={index}
                 className="px-3 py-1 bg-purple-50 text-purple-700 rounded-full text-xs font-medium"
@@ -159,7 +148,7 @@ export default function ReflectionPost({
       {/* Action buttons */}
       <div className="flex items-center gap-4 pb-3 mb-3 border-b border-gray-100">
         <button
-          onClick={() => onReact(reflection.id, 'heart')}
+          onClick={() => onReact(journey.id, 'heart')}
           className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
             hasUserReacted
               ? 'bg-red-50 text-red-600 hover:bg-red-100'
@@ -175,7 +164,7 @@ export default function ReflectionPost({
         >
           <MessageCircle size={18} />
           <span className="text-sm font-medium">
-            Comment {reflection.comments && reflection.comments.length > 0 && `(${reflection.comments.length})`}
+            Comment {journey.comments && journey.comments.length > 0 && `(${journey.comments.length})`}
           </span>
         </button>
       </div>
@@ -183,7 +172,7 @@ export default function ReflectionPost({
       {/* Reaction options (expanded) */}
       <div className="flex items-center gap-2 mb-4">
         <button
-          onClick={() => onReact(reflection.id, 'heart')}
+          onClick={() => onReact(journey.id, 'heart')}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-red-50 transition-colors"
           title="Heart"
         >
@@ -193,7 +182,7 @@ export default function ReflectionPost({
           )}
         </button>
         <button
-          onClick={() => onReact(reflection.id, 'celebrate')}
+          onClick={() => onReact(journey.id, 'celebrate')}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-yellow-50 transition-colors"
           title="Celebrate"
         >
@@ -203,7 +192,7 @@ export default function ReflectionPost({
           )}
         </button>
         <button
-          onClick={() => onReact(reflection.id, 'support')}
+          onClick={() => onReact(journey.id, 'support')}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-colors"
           title="Support"
         >
@@ -218,9 +207,9 @@ export default function ReflectionPost({
       {showComments && (
         <div className="mt-4 pt-4 border-t border-gray-100">
           {/* Existing comments */}
-          {reflection.comments && reflection.comments.length > 0 && (
+          {journey.comments && journey.comments.length > 0 && (
             <div className="space-y-3 mb-4">
-              {reflection.comments.map(comment => {
+              {journey.comments.map(comment => {
                 const commenter = comment.user || allUsers.find(u => u.id === comment.userId)
                 return (
                   <div key={comment.id} className="flex gap-3">
