@@ -10,7 +10,7 @@ type RoleOption = 'MENTOR' | 'MENTEE' | 'BOTH'
 
 export default function Auth() {
   const navigate = useNavigate()
-  const { refreshCurrentUser } = useApp()
+  const { refreshCurrentUser, setCurrentUser } = useApp()
   const [mode, setMode] = useState<Mode>('signIn')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -82,10 +82,13 @@ export default function Auth() {
       await signIn({ username: signUpData.email, password: signUpData.password })
       const user = await refreshCurrentUser()
       if (user) {
-        await api.updateUser(user.id, {
+        const updatedUser = await api.updateUser(user.id, {
           role: signUpData.role,
           name: signUpData.name
         })
+        if (updatedUser) {
+          setCurrentUser(updatedUser)
+        }
       }
       navigate('/setup')
     } catch (err: any) {
