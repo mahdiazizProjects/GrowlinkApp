@@ -47,13 +47,10 @@ export default function DailyReflectionBanner({ userId }: DailyReflectionBannerP
         mood: moodValue as 'GREAT' | 'GOOD' | 'NEUTRAL' | 'BAD' | 'AWFUL',
         moodScore: moodScore,
         text: text.trim(),
-        content: text.trim(), // Keep for backward compatibility
-        isShared: false,
-        visibility: 'private', // Daily reflections are private by default
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       }
-      
+
       addReflection(reflection)
       setSaveSuccess(true)
       setText('')
@@ -80,7 +77,7 @@ export default function DailyReflectionBanner({ userId }: DailyReflectionBannerP
                 <p className="text-sm font-semibold text-green-900">Reflection saved for today</p>
                 <p className="text-xs text-green-700">
                   {todayReflection.mood && MOODS.find(m => m.value === todayReflection.mood)?.emoji}{' '}
-                  {todayReflection.text || (typeof todayReflection.content === 'string' ? todayReflection.content : 'No notes')}
+                  {todayReflection.text || 'No notes'}
                 </p>
               </div>
             </div>
