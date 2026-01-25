@@ -33,7 +33,10 @@ export default function Reflections() {
     ...mockMentees
   ]
 
-  const mentors = mockUsers.filter(u => u.role === 'MENTOR' || u.role === 'mentor' || u.role === 'BOTH')
+  const mentors = mockUsers.filter(u => {
+    const role = u.role?.toLowerCase()
+    return role === 'mentor' || role === 'both'
+  })
 
   const handleSubmitReflection = (reflectionData: {
     text: string

@@ -49,9 +49,7 @@ export async function createUser(input: Partial<User>): Promise<User | null> {
       location: input.location,
       skills: input.skills || [],
       interests: input.interests || [],
-      role: (input.role?.toUpperCase() === 'MENTOR' ? 'MENTOR' : 
-             input.role?.toUpperCase() === 'MENTEE' ? 'MENTEE' : 
-             input.role?.toUpperCase() === 'BOTH' ? 'BOTH' : 'MENTEE'),
+      role: normalizeUserRole(input.role),
     });
     if (!data) return null;
     return mapUserFromAPI(data);
@@ -66,9 +64,7 @@ export async function updateUser(userId: string, updates: Partial<User>): Promis
     // Normalize role to match schema enum
     const normalizedUpdates: any = { ...updates };
     if (normalizedUpdates.role) {
-      if (normalizedUpdates.role === 'mentor') normalizedUpdates.role = 'MENTOR';
-      else if (normalizedUpdates.role === 'mentee') normalizedUpdates.role = 'MENTEE';
-      else if (normalizedUpdates.role === 'BOTH') normalizedUpdates.role = 'BOTH';
+      normalizedUpdates.role = normalizeUserRole(normalizedUpdates.role);
     }
     
     const { data } = await getClient().models.User.update({
@@ -249,9 +245,10 @@ export async function listMentors(): Promise<User[]> {
     // For now, list all users and filter client-side
     const { data } = await getClient().models.User.list();
     const allUsers = (data || []).map(mapUserFromAPI);
-    return allUsers.filter(user => 
-      user.role === 'MENTOR' || user.role === 'mentor' || user.role === 'BOTH'
-    );
+    return allUsers.filter(user => {
+      const role = user.role?.toLowerCase();
+      return role === 'mentor' || role === 'both';
+    });
   } catch (error) {
     console.error('Error listing mentors:', error);
     return [];
@@ -640,7 +637,7 @@ function mapUserFromAPI(data: any): User {
     username: data.username || data.email?.split('@')[0] || '',
     email: data.email || '',
     name: data.name || '',
-    role: (data.role?.toLowerCase() || 'mentee') as 'mentor' | 'mentee' | 'BOTH',
+    role: normalizeUserRole(data.role),
     bio: data.bio,
     avatar: data.avatar,
     location: data.location,
@@ -650,6 +647,14 @@ function mapUserFromAPI(data: any): User {
     verified: false,
     createdAt: data.createdAt || new Date().toISOString(),
   };
+}
+
+function normalizeUserRole(role?: string): 'MENTOR' | 'MENTEE' | 'BOTH' {
+  const roleUpper = role?.toUpperCase();
+  if (roleUpper === 'MENTOR' || roleUpper === 'MENTEE' || roleUpper === 'BOTH') {
+    return roleUpper;
+  }
+  return 'MENTEE';
 }
 
 function mapSessionFromAPI(data: any): Session {

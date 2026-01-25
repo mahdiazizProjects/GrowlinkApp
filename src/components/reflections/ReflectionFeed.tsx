@@ -23,10 +23,14 @@ export default function ReflectionFeed({
 }: ReflectionFeedProps) {
   const [filter, setFilter] = useState<FilterType>('all')
   const [sort, setSort] = useState<SortType>('recent')
+  const currentRole = currentUser.role?.toLowerCase()
 
   // Get user's mentors (users who have mentored them)
   const mentorIds = allUsers
-    .filter(u => u.role === 'MENTOR' || u.role === 'mentor' || u.role === 'BOTH')
+    .filter(u => {
+      const role = u.role?.toLowerCase()
+      return role === 'mentor' || role === 'both'
+    })
     .map(u => u.id)
 
   // Filter reflections based on visibility and user permissions
@@ -39,7 +43,7 @@ export default function ReflectionFeed({
       if (reflection.visibility === 'private') return false
       if (reflection.visibility === 'everyone') return true
       if (reflection.visibility === 'mentors') {
-        return currentUser.role === 'MENTOR' || currentUser.role === 'mentor' || currentUser.role === 'BOTH'
+        return currentRole === 'mentor' || currentRole === 'both'
       }
       if (reflection.visibility === 'selected' && reflection.selectedMentorIds) {
         return reflection.selectedMentorIds.includes(currentUser.id)

@@ -77,7 +77,10 @@ export async function seedMentees(): Promise<{ created: number; skipped: number 
   try {
     // Check if mentees already exist
     const allUsers = await api.listUsers()
-    const existingMentees = allUsers.filter(u => u.role === 'MENTEE' || u.role === 'mentee')
+    const existingMentees = allUsers.filter(u => {
+      const role = u.role?.toLowerCase()
+      return role === 'mentee' || role === 'both'
+    })
     
     if (existingMentees.length > 0) {
       console.log(`Found ${existingMentees.length} existing mentees. Skipping seed.`)

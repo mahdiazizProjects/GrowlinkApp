@@ -1,6 +1,6 @@
 import { X, Calendar, Clock, MapPin, Video, DollarSign } from 'lucide-react'
-import { Session } from '../../types'
-import { format } from 'date-fns'
+import { MentorSessionNotes, Session } from '../../types'
+import { format, isValid, parse } from 'date-fns'
 import FeedbackPrompt from '../feedback/FeedbackPrompt'
 
 interface SessionDetailModalProps {
@@ -8,17 +8,56 @@ interface SessionDetailModalProps {
   onClose: () => void
   onLeaveFeedback?: () => void
   currentUserId: string
+  sessionNotes?: MentorSessionNotes | null
+  onUpdateNotes?: (noteId: string, updates: Partial<MentorSessionNotes>) => void
+  onUpdateSession?: (sessionId: string, updates: Partial<Session>) => void
 }
 
 export default function SessionDetailModal({
   session,
   onClose,
   onLeaveFeedback,
-  currentUserId
+  currentUserId,
+  sessionNotes,
+  onUpdateNotes,
+  onUpdateSession
 }: SessionDetailModalProps) {
   const isMentee = session.menteeId === currentUserId
-  const sessionDate = new Date(`${session.date}T${session.time}`)
-  const endTime = new Date(sessionDate.getTime() + session.duration * 60000)
+  const sessionDate = (() => {
+    if (session.date) {
+      const fromIso = new Date(session.date)
+      if (isValid(fromIso)) return fromIso
+    }
+    if (session.date && session.time) {
+      const parsed = parse(`${session.date} ${session.time}`, 'yyyy-MM-dd h:mm a', new Date())
+      if (isValid(parsed)) return parsed
+    }
+    return null
+  })()
+  const endTime = sessionDate ? new Date(sessionDate.getTime() + session.duration * 60000) : null
+  const dateLabel = sessionDate ? format(sessionDate, 'EEEE, MMMM d, yyyy') : 'Date TBD'
+  const timeLabel = sessionDate
+    ? `${format(sessionDate, 'h:mm a')} - ${format(endTime ?? sessionDate, 'h:mm a')}`
+    : 'Time TBD'
+  const normalizedStatus = session.status.toLowerCase()
+  const now = new Date()
+  const hoursUntil = sessionDate ? (sessionDate.getTime() - now.getTime()) / 36e5 : null
+  const canCancel = normalizedStatus !== 'cancelled' && normalizedStatus !== 'completed'
+    && !!sessionDate && hoursUntil !== null && hoursUntil >= 24
+
+  const toggleActionItem = (itemId: string) => {
+    if (!sessionNotes || !onUpdateNotes) return
+    const nextItems = (sessionNotes.actionItems || []).map(item =>
+      item.id === itemId ? { ...item, completed: !item.completed } : item
+    )
+    onUpdateNotes(sessionNotes.id, { actionItems: nextItems })
+  }
+
+  const handleCancel = async () => {
+    if (!onUpdateSession || !canCancel) return
+    await onUpdateSession(session.id, { status: 'cancelled' })
+    onClose()
+  }
 
   // Fix: Check if mentor exists
   if (!session.mentor) return null;
@@ -56,7 +95,7 @@ export default function SessionDetailModal({
             <Calendar className="text-primary-600 mt-1" size={20} />
             <div>
               <p className="text-sm text-gray-600">Date</p>
-              <p className="font-semibold text-gray-900">{format(sessionDate, 'EEEE, MMMM d, yyyy')}</p>
+              <p className="font-semibold text-gray-900">{dateLabel}</p>
             </div>
           </div>
 
@@ -64,9 +103,7 @@ export default function SessionDetailModal({
             <Clock className="text-primary-600 mt-1" size={20} />
             <div>
               <p className="text-sm text-gray-600">Time</p>
-              <p className="font-semibold text-gray-900">
-                {format(sessionDate, 'h:mm a')} - {format(endTime, 'h:mm a')}
-              </p>
+              <p className="font-semibold text-gray-900">{timeLabel}</p>
               <p className="text-xs text-gray-500">{session.duration} minutes</p>
             </div>
           </div>
@@ -102,6 +139,54 @@ export default function SessionDetailModal({
           <p className="text-sm text-gray-600 mb-2">Topic</p>
           <p className="font-semibold text-gray-900">{session.topic}</p>
         </div>
+
+        {/* Mentor Notes & Action Items */}
+        {sessionNotes && (
+          <div className="border-t border-gray-200 pt-4 space-y-4">
+            <div>
+              <p className="text-sm text-gray-600 mb-2">Session Summary</p>
+              <p className="text-gray-900">{sessionNotes.summary}</p>
+            </div>
+            {sessionNotes.followUps && (
+              <div>
+                <p className="text-sm text-gray-600 mb-2">Follow-ups</p>
+                <p className="text-gray-900">{sessionNotes.followUps}</p>
+              </div>
+            )}
+            {sessionNotes.growthFocus && (
+              <div>
+                <p className="text-sm text-gray-600 mb-2">Growth Focus</p>
+                <p className="text-gray-900">{sessionNotes.growthFocus}</p>
+              </div>
+            )}
+            <div>
+              <p className="text-sm text-gray-600 mb-2">Action Items</p>
+              {sessionNotes.actionItems && sessionNotes.actionItems.length > 0 ? (
+                <div className="space-y-2">
+                  {sessionNotes.actionItems.map(item => (
+                    <label key={item.id} className="flex items-center gap-3 text-sm text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={item.completed}
+                        onChange={() => toggleActionItem(item.id)}
+                        disabled={!onUpdateNotes}
+                        className="h-4 w-4 text-primary-600"
+                      />
+                      <span className={item.completed ? 'line-through text-gray-400' : ''}>
+                        {item.text || 'Action item'}
+                      </span>
+                      {item.dueDate && (
+                        <span className="text-xs text-gray-500">Due {format(new Date(item.dueDate), 'MMM d, yyyy')}</span>
+                      )}
+                    </label>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500">No action items yet.</p>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Participants */}
         <div className="border-t border-gray-200 pt-4">
@@ -159,6 +244,26 @@ export default function SessionDetailModal({
               session={session}
               onLeaveFeedback={onLeaveFeedback}
             />
+          </div>
+        )}
+
+        {isMentee && onUpdateSession && (
+          <div className="border-t border-gray-200 pt-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={handleCancel}
+                disabled={!canCancel}
+                className="px-4 py-2 border border-red-500 text-red-600 rounded-lg font-semibold hover:bg-red-50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                Cancel session
+              </button>
+              {!canCancel && (
+                <span className="text-sm text-gray-500">
+                  Cancellations are allowed only more than 24 hours before the session.
+                </span>
+              )}
+            </div>
           </div>
         )}
 

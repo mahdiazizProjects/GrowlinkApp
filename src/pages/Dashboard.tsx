@@ -27,6 +27,7 @@ export default function Dashboard() {
     addMentorSessionNotes,
     updateMentorSessionNotes,
     getMentorSessionNotes,
+    updateSession,
     markNotificationAsRead,
     getUnreadNotificationCount,
     getMentorStats,
@@ -84,6 +85,7 @@ export default function Dashboard() {
   }
 
   const user = currentUser
+  const normalizedRole = user.role?.toLowerCase()
 
   // Handle feedback submission
   const handleFeedbackSubmit = (feedbackData: Omit<SessionFeedback, 'id' | 'createdAt' | 'updatedAt'>) => {
@@ -113,7 +115,7 @@ export default function Dashboard() {
   }
 
   // If user is a mentor, show enhanced mentor dashboard
-  if (user.role === 'MENTOR' || user.role === 'mentor') {
+  if (normalizedRole === 'mentor' || normalizedRole === 'both') {
     const feedbackStats = getMentorFeedbackStats(user.id)
     const mentorFeedbacks = sessionFeedbacks.filter(f => f.mentorId === user.id)
     const mentorStats = getMentorStats(user.id)
@@ -225,6 +227,7 @@ export default function Dashboard() {
                 onClose={() => setSelectedMentorSession(null)}
                 onSaveNotes={handleSaveMentorNotes}
                 onUpdateNotes={handleUpdateMentorNotes}
+                onUpdateSession={updateSession}
                 mentorId={user.id}
               />
             </div>
@@ -248,7 +251,7 @@ export default function Dashboard() {
 
   return (
     <>
-      <MenteeDashboard />
+      <MenteeDashboard onSelectSession={setSelectedSessionForDetail} />
 
       {/* Completed Sessions with Feedback Prompts - Show below dashboard */}
       {(() => {
@@ -310,6 +313,9 @@ export default function Dashboard() {
               setSelectedSessionForFeedback(selectedSessionForDetail)
             }}
             currentUserId={user.id}
+            sessionNotes={getMentorSessionNotes(selectedSessionForDetail.id)}
+            onUpdateNotes={updateMentorSessionNotes}
+            onUpdateSession={updateSession}
           />
         </div>
       )}

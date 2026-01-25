@@ -12,8 +12,9 @@ export default function Navbar() {
   const [showProfile, setShowProfile] = useState(false)
 
   const isActive = (path: string) => location.pathname === path
-  const isMentor = currentUser && (currentUser.role === 'MENTOR' || currentUser.role === 'mentor')
-  const isMentee = currentUser && (currentUser.role === 'MENTEE' || currentUser.role === 'mentee')
+  const normalizedRole = currentUser?.role?.toLowerCase()
+  const isMentor = normalizedRole === 'mentor' || normalizedRole === 'both'
+  const isMentee = normalizedRole === 'mentee' || normalizedRole === 'both'
 
   const handleLogout = async () => {
     await logout()

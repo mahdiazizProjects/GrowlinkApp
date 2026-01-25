@@ -1,6 +1,7 @@
 import { User, Calendar, Star, TrendingUp, Eye } from 'lucide-react'
 import { MenteeSummary, Session } from '../../types'
 import { format } from 'date-fns'
+import { isUpcomingSession } from '../../utils/sessionTime'
 
 interface MenteeManagementProps {
   menteeSummaries: MenteeSummary[]
@@ -38,8 +39,8 @@ export default function MenteeManagement({ menteeSummaries, sessions, onViewMent
       <div className="space-y-4">
         {menteeSummaries.map((summary) => {
           const menteeSessions = sessions.filter(s => s.menteeId === summary.menteeId)
-          const upcomingSessions = menteeSessions.filter(s => 
-            s.status === 'confirmed' || s.status === 'pending'
+          const upcomingSessions = menteeSessions.filter(s =>
+            (s.status === 'confirmed' || s.status === 'pending') && isUpcomingSession(s)
           ).length
 
           return (

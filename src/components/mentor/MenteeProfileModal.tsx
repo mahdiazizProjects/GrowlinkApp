@@ -1,6 +1,7 @@
 import { X, Mail, MapPin, Calendar, Star, CheckCircle } from 'lucide-react'
 import { MenteeSummary, Session, SessionFeedback } from '../../types'
 import { format } from 'date-fns'
+import { isUpcomingSession } from '../../utils/sessionTime'
 
 interface MenteeProfileModalProps {
   menteeSummary: MenteeSummary
@@ -16,8 +17,8 @@ export default function MenteeProfileModal({
   onClose
 }: MenteeProfileModalProps) {
   const menteeSessions = sessions.filter(s => s.menteeId === menteeSummary.menteeId)
-  const upcomingSessions = menteeSessions.filter(s => 
-    s.status === 'confirmed' || s.status === 'pending'
+  const upcomingSessions = menteeSessions.filter(s =>
+    (s.status === 'confirmed' || s.status === 'pending') && isUpcomingSession(s)
   )
   const menteeFeedbacks = feedbacks.filter(f => f.menteeId === menteeSummary.menteeId)
 
