@@ -140,6 +140,16 @@ export default function SessionDetailModal({
           <p className="font-semibold text-gray-900">{session.topic}</p>
         </div>
 
+        {/* Rejection Reason (if session was rejected) */}
+        {session.rejectionReason && normalizedStatus === 'cancelled' && (
+          <div className="border-t border-gray-200 pt-4">
+            <div className="bg-red-50 border-2 border-red-200 rounded-lg p-4">
+              <p className="text-sm font-semibold text-red-900 mb-2">Session Rejected</p>
+              <p className="text-sm text-red-800">{session.rejectionReason}</p>
+            </div>
+          </div>
+        )}
+
         {/* Mentor Notes & Action Items */}
         {sessionNotes && (
           <div className="border-t border-gray-200 pt-4 space-y-4">

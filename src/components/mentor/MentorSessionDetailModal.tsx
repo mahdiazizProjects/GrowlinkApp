@@ -107,7 +107,10 @@ export default function MentorSessionDetailModal({
       setDecisionError('Please provide a brief reason (at least 5 characters).')
       return
     }
-    await onUpdateSession(session.id, { status: 'cancelled' })
+    await onUpdateSession(session.id, { 
+      status: 'cancelled',
+      rejectionReason: decisionReason.trim()
+    })
     onClose()
   }
 

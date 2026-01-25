@@ -943,6 +943,7 @@ function mapSessionFromAPI(data: any): Session {
     status,
     topic: data.notes || '',
     notes: data.notes,
+    rejectionReason: data.rejectionReason,
     meetingLink: data.meetingLink,
     feedbackEligible: false,
     feedbackSubmitted: false,

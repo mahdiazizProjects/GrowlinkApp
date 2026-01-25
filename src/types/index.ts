@@ -59,6 +59,7 @@ export interface Session {
   feedbackSubmitted?: boolean;
   feedbackSubmittedAt?: string;
   notes?: string;
+  rejectionReason?: string;
   meetingLink?: string;
 }
 

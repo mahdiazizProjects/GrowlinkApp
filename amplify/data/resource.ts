@@ -39,6 +39,7 @@ const schema = a.schema({
     duration: a.integer().required(),
     status: a.enum(['PENDING', 'CONFIRMED', 'COMPLETED', 'CANCELLED']),
     notes: a.string(),
+    rejectionReason: a.string(),
     meetingLink: a.string(),
   }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
 
