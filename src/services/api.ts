@@ -40,6 +40,7 @@ export async function listUsers(filter?: any): Promise<User[]> {
 export async function createUser(input: Partial<User>): Promise<User | null> {
   try {
     const { data } = await getClient().models.User.create({
+      id: input.id,
       email: input.email || '',
       name: input.name || '',
       username: input.username || input.email?.split('@')[0] || '',
@@ -48,9 +49,7 @@ export async function createUser(input: Partial<User>): Promise<User | null> {
       location: input.location,
       skills: input.skills || [],
       interests: input.interests || [],
-      role: (input.role?.toUpperCase() === 'MENTOR' ? 'MENTOR' : 
-             input.role?.toUpperCase() === 'MENTEE' ? 'MENTEE' : 
-             input.role?.toUpperCase() === 'BOTH' ? 'BOTH' : 'MENTEE'),
+      role: normalizeUserRole(input.role),
     });
     if (!data) return null;
     return mapUserFromAPI(data);
@@ -65,9 +64,7 @@ export async function updateUser(userId: string, updates: Partial<User>): Promis
     // Normalize role to match schema enum
     const normalizedUpdates: any = { ...updates };
     if (normalizedUpdates.role) {
-      if (normalizedUpdates.role === 'mentor') normalizedUpdates.role = 'MENTOR';
-      else if (normalizedUpdates.role === 'mentee') normalizedUpdates.role = 'MENTEE';
-      else if (normalizedUpdates.role === 'BOTH') normalizedUpdates.role = 'BOTH';
+      normalizedUpdates.role = normalizeUserRole(normalizedUpdates.role);
     }
     
     const { data } = await getClient().models.User.update({
@@ -248,9 +245,10 @@ export async function listMentors(): Promise<User[]> {
     // For now, list all users and filter client-side
     const { data } = await getClient().models.User.list();
     const allUsers = (data || []).map(mapUserFromAPI);
-    return allUsers.filter(user => 
-      user.role === 'MENTOR' || user.role === 'mentor' || user.role === 'BOTH'
-    );
+    return allUsers.filter(user => {
+      const role = user.role?.toLowerCase();
+      return role === 'mentor' || role === 'both';
+    });
   } catch (error) {
     console.error('Error listing mentors:', error);
     return [];
@@ -660,15 +658,28 @@ export async function getJourney(journeyId: string): Promise<Journey | null> {
     if (!data) return null;
 
     // Fetch related data using relationships
-    const [reactions, comments] = await Promise.all([
+    const [user, reactions, commentsResponse] = await Promise.all([
+      data.user ? data.user() : Promise.resolve({ data: null }),
       data.reactions(),
       data.comments()
     ]);
 
+    // Fetch user for each comment
+    const comments = await Promise.all(
+      (commentsResponse.data || []).map(async (comment: any) => {
+        const commentUser = comment.user ? await comment.user() : { data: null };
+        return {
+          ...comment,
+          user: commentUser.data || undefined
+        };
+      })
+    );
+
     return mapJourneyFromAPI({
       ...data,
+      user: user.data || undefined,
       reactions: reactions.data || [],
-      comments: comments.data || []
+      comments: comments
     });
   } catch (error) {
     console.error('Error fetching journey:', error);
@@ -681,18 +692,31 @@ export async function listJourneys(userId?: string): Promise<Journey[]> {
     const filter = userId ? { filter: { userId: { eq: userId } } } : undefined;
     const { data } = await getClient().models.Journey.list(filter);
 
-    // Get all journeys with reactions and comments using relationships
+    // Get all journeys with user, reactions, and comments using relationships
     const journeysWithData = await Promise.all(
       (data || []).map(async (journey) => {
-        const [reactions, comments] = await Promise.all([
+        const [user, reactions, commentsResponse] = await Promise.all([
+          journey.user ? journey.user() : Promise.resolve({ data: null }),
           journey.reactions(),
           journey.comments()
         ]);
 
+        // Fetch user for each comment
+        const comments = await Promise.all(
+          (commentsResponse.data || []).map(async (comment: any) => {
+            const commentUser = comment.user ? await comment.user() : { data: null };
+            return {
+              ...comment,
+              user: commentUser.data || undefined
+            };
+          })
+        );
+
         return mapJourneyFromAPI({
           ...journey,
+          user: user.data || undefined,
           reactions: reactions.data || [],
-          comments: comments.data || []
+          comments: comments
         });
       })
     );
@@ -716,7 +740,16 @@ export async function createJourney(input: Partial<Journey>): Promise<Journey | 
       tags: input.tags || [],
     });
     if (!data) return null;
-    return mapJourneyFromAPI(data);
+
+    // Fetch user relationship
+    const user = data.user ? await data.user() : { data: null };
+
+    return mapJourneyFromAPI({
+      ...data,
+      user: user.data || input.user || undefined,
+      reactions: [],
+      comments: []
+    });
   } catch (error) {
     console.error('Error creating journey:', error);
     return null;
@@ -735,7 +768,14 @@ export async function updateJourney(journeyId: string, updates: Partial<Journey>
       ...normalizedUpdates,
     });
     if (!data) return null;
-    return mapJourneyFromAPI(data);
+
+    // Fetch user relationship
+    const user = data.user ? await data.user() : { data: null };
+
+    return mapJourneyFromAPI({
+      ...data,
+      user: user.data || undefined
+    });
   } catch (error) {
     console.error('Error updating journey:', error);
     return null;
@@ -823,7 +863,14 @@ export async function createJourneyComment(input: { journeyId: string; userId: s
       text: input.text,
     });
     if (!data) return null;
-    return mapJourneyCommentFromAPI(data);
+
+    // Fetch user relationship
+    const user = data.user ? await data.user() : { data: null };
+
+    return mapJourneyCommentFromAPI({
+      ...data,
+      user: user.data || undefined
+    });
   } catch (error) {
     console.error('Error creating journey comment:', error);
     return null;
@@ -852,7 +899,7 @@ function mapUserFromAPI(data: any): User {
     username: data.username || data.email?.split('@')[0] || '',
     email: data.email || '',
     name: data.name || '',
-    role: (data.role?.toLowerCase() || 'mentee') as 'mentor' | 'mentee' | 'BOTH',
+    role: normalizeUserRole(data.role),
     bio: data.bio,
     avatar: data.avatar,
     location: data.location,
@@ -862,6 +909,14 @@ function mapUserFromAPI(data: any): User {
     verified: false,
     createdAt: data.createdAt || new Date().toISOString(),
   };
+}
+
+function normalizeUserRole(role?: string): 'MENTOR' | 'MENTEE' | 'BOTH' {
+  const roleUpper = role?.toUpperCase();
+  if (roleUpper === 'MENTOR' || roleUpper === 'MENTEE' || roleUpper === 'BOTH') {
+    return roleUpper;
+  }
+  return 'MENTEE';
 }
 
 function mapSessionFromAPI(data: any): Session {
@@ -888,6 +943,7 @@ function mapSessionFromAPI(data: any): Session {
     status,
     topic: data.notes || '',
     notes: data.notes,
+    rejectionReason: data.rejectionReason,
     meetingLink: data.meetingLink,
     feedbackEligible: false,
     feedbackSubmitted: false,
@@ -943,6 +999,24 @@ function mapReflectionFromAPI(data: any): Reflection {
 }
 
 function mapJourneyFromAPI(data: any): Journey {
+  // Handle reactions - could be array, function (relationship), or undefined
+  let reactions: JourneyReaction[] = [];
+  if (Array.isArray(data.reactions)) {
+    reactions = data.reactions.map(mapJourneyReactionFromAPI);
+  } else if (data.reactions && typeof data.reactions === 'function') {
+    // It's a relationship function, we'll handle it in the calling code
+    reactions = [];
+  }
+
+  // Handle comments - could be array, function (relationship), or undefined
+  let comments: JourneyComment[] = [];
+  if (Array.isArray(data.comments)) {
+    comments = data.comments.map(mapJourneyCommentFromAPI);
+  } else if (data.comments && typeof data.comments === 'function') {
+    // It's a relationship function, we'll handle it in the calling code
+    comments = [];
+  }
+
   return {
     id: data.id,
     userId: data.userId,
@@ -953,8 +1027,8 @@ function mapJourneyFromAPI(data: any): Journey {
     visibility: (data.visibility?.toLowerCase() || 'private') as Journey['visibility'],
     selectedMentorIds: data.selectedMentorIds || [],
     tags: data.tags || [],
-    reactions: (data.reactions || []).map(mapJourneyReactionFromAPI),
-    comments: (data.comments || []).map(mapJourneyCommentFromAPI),
+    reactions,
+    comments,
     createdAt: data.createdAt || new Date().toISOString(),
     updatedAt: data.updatedAt || new Date().toISOString(),
   };

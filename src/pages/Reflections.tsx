@@ -1,19 +1,42 @@
+import { useState, useEffect } from 'react'
 import { useApp } from '../context/AppContext'
 import JourneyComposer from '../components/journeys/JourneyComposer'
 import JourneyFeed from '../components/journeys/JourneyFeed'
 import { Sparkles } from 'lucide-react'
 import { Journey, User } from '../types'
-import { mockMentors, mockMentees } from '../data/mockData'
+import * as api from '../services/api'
 
 export default function Reflections() {
   const {
     currentUser,
     journeys,
     goals,
+    sessions,
     addJourney,
     addReactionToJourney,
     addCommentToJourney
   } = useApp()
+
+  const [allUsers, setAllUsers] = useState<User[]>([])
+
+  // Fetch all users for reaction tooltips
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const users = await api.listUsers()
+        setAllUsers(users)
+      } catch (error) {
+        console.error('Error fetching users:', error)
+        // Fallback to just current user if fetch fails
+        if (currentUser) {
+          setAllUsers([currentUser])
+        }
+      }
+    }
+    if (currentUser) {
+      fetchUsers()
+    }
+  }, [currentUser])
 
   if (!currentUser) {
     return (
@@ -26,14 +49,17 @@ export default function Reflections() {
     )
   }
 
-  // Mock users data - in production, this would come from context or API
-  const mockUsers: User[] = [
-    currentUser,
-    ...mockMentors,
-    ...mockMentees
-  ]
+  // Ensure currentUser is in the list
+  const usersWithCurrent = allUsers.length > 0 
+    ? allUsers.some(u => u.id === currentUser.id) 
+      ? allUsers 
+      : [currentUser, ...allUsers]
+    : [currentUser]
 
-  const mentors = mockUsers.filter(u => u.role === 'MENTOR' || u.role === 'mentor' || u.role === 'BOTH')
+  const mentors = usersWithCurrent.filter(u => {
+    const role = u.role?.toLowerCase()
+    return role === 'mentor' || role === 'both'
+  })
 
   const handleSubmitJourney = (journeyData: {
     text: string
@@ -72,10 +98,10 @@ export default function Reflections() {
   // Enrich journeys with user data
   const enrichedJourneys = journeys.map(journey => ({
     ...journey,
-    user: journey.user || mockUsers.find(u => u.id === journey.userId),
+    user: journey.user || usersWithCurrent.find(u => u.id === journey.userId),
     comments: journey.comments?.map(comment => ({
       ...comment,
-      user: comment.user || mockUsers.find(u => u.id === comment.userId)
+      user: comment.user || usersWithCurrent.find(u => u.id === comment.userId)
     }))
   }))
 
@@ -109,7 +135,8 @@ export default function Reflections() {
         <JourneyFeed
           journeys={enrichedJourneys}
           currentUser={currentUser}
-          allUsers={mockUsers}
+          allUsers={usersWithCurrent}
+          sessions={sessions}
           onReact={handleReact}
           onComment={handleComment}
         />

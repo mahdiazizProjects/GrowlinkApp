@@ -1,12 +1,13 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { Filter, TrendingUp, Clock, Users } from 'lucide-react'
-import { Journey, User } from '../../types'
+import { Journey, User, Session } from '../../types'
 import JourneyPost from './JourneyPost'
 
 interface JourneyFeedProps {
   journeys: Journey[]
   currentUser: User
   allUsers: User[]
+  sessions: Session[]
   onReact: (journeyId: string, reactionType: 'heart' | 'celebrate' | 'support') => void
   onComment: (journeyId: string, text: string) => void
 }
@@ -18,16 +19,31 @@ export default function JourneyFeed({
   journeys,
   currentUser,
   allUsers,
+  sessions,
   onReact,
   onComment
 }: JourneyFeedProps) {
   const [filter, setFilter] = useState<FilterType>('all')
   const [sort, setSort] = useState<SortType>('recent')
+  const currentRole = currentUser.role?.toLowerCase()
 
-  // Get user's mentors
+  // Get user's mentors (for mentees)
   const mentorIds = allUsers
-    .filter(u => u.role === 'MENTOR' || u.role === 'mentor' || u.role === 'BOTH')
+    .filter(u => {
+      const role = u.role?.toLowerCase()
+      return role === 'mentor' || role === 'both'
+    })
     .map(u => u.id)
+
+  // Get mentee IDs for current user if they're a mentor (to show their mentees' posts)
+  const menteeIds = useMemo(() => {
+    if (currentRole === 'mentor' || currentRole === 'both') {
+      return sessions
+        .filter(s => s.mentorId === currentUser.id)
+        .map(s => s.menteeId)
+    }
+    return []
+  }, [sessions, currentUser.id, currentRole])
 
   // Filter journeys based on visibility and user permissions
   const getVisibleJourneys = () => {
@@ -35,14 +51,23 @@ export default function JourneyFeed({
       // Always show user's own posts
       if (journey.userId === currentUser.id) return true
 
-      // Check visibility settings
+      // Private posts - only visible to owner
       if (journey.visibility === 'private') return false
+      
+      // Everyone visibility - show to all users (mentors can see their mentees' public posts)
       if (journey.visibility === 'everyone') return true
-      if (journey.visibility === 'mentors') {
-        return currentUser.role === 'MENTOR' || currentUser.role === 'mentor' || currentUser.role === 'BOTH'
+      
+      // Selected visibility - show if current user is in selectedMentorIds
+      if (journey.visibility === 'selected') {
+        return journey.selectedMentorIds?.includes(currentUser.id) || false
       }
-      if (journey.visibility === 'selected' && journey.selectedMentorIds) {
-        return journey.selectedMentorIds.includes(currentUser.id)
+      
+      // Mentors visibility - show to mentors who have a relationship with the author
+      // OR if current user is a mentor and the author is their mentee
+      if (journey.visibility === 'mentors') {
+        const isMentor = currentRole === 'mentor' || currentRole === 'both'
+        // Show if user is a mentor AND the author is their mentee
+        return isMentor && menteeIds.includes(journey.userId)
       }
 
       return false

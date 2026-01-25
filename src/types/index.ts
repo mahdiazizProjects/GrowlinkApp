@@ -59,6 +59,7 @@ export interface Session {
   feedbackSubmitted?: boolean;
   feedbackSubmittedAt?: string;
   notes?: string;
+  rejectionReason?: string;
   meetingLink?: string;
 }
 
@@ -290,10 +291,18 @@ export interface MentorSessionNotes {
   mentorId: string;
   summary: string;
   followUps: string;
+  actionItems?: SessionActionItem[];
   growthFocus?: string;
   privateNotes?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface SessionActionItem {
+  id: string;
+  text: string;
+  dueDate?: string;
+  completed: boolean;
 }
 
 export interface MentorStats {

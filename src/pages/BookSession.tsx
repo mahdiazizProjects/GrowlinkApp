@@ -23,7 +23,8 @@ export default function BookSession() {
         const mentorData = await api.getUser(mentorId)
         if (mentorData) {
           // Verify the user is actually a mentor
-          const isMentor = mentorData.role === 'MENTOR' || mentorData.role === 'mentor' || mentorData.role === 'BOTH'
+          const role = mentorData.role?.toLowerCase()
+          const isMentor = role === 'mentor' || role === 'both'
           if (isMentor) {
             setMentor(mentorData)
           } else {

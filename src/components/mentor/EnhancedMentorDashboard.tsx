@@ -1,7 +1,8 @@
 import { useMemo } from 'react'
 import { Users, Calendar, Star, MessageSquare, Clock } from 'lucide-react'
 import { Session, SessionFeedback, User } from '../../types'
-import { format, parseISO } from 'date-fns'
+import { format, parseISO, isSameDay } from 'date-fns'
+import { getSessionDateTime, isUpcomingSession } from '../../utils/sessionTime'
 
 interface EnhancedMentorDashboardProps {
   mentorId: string
@@ -34,16 +35,14 @@ export default function EnhancedMentorDashboard({
 
   const stats = useMemo(() => {
     const upcomingSessions = mentorSessions.filter(s =>
-      s.status === 'confirmed' || s.status === 'pending'
+      (s.status === 'confirmed' || s.status === 'pending') && isUpcomingSession(s)
     )
 
     // Today's sessions should be upcoming sessions (pending/confirmed) that are scheduled for today
     const today = new Date()
-    const todayDateString = today.toISOString().split('T')[0] // YYYY-MM-DD format
     const todaysSessions = upcomingSessions.filter(s => {
-      // Compare date strings to avoid timezone issues
-      const sessionDateString = s.date.split('T')[0] // Extract just the date part
-      return sessionDateString === todayDateString
+      const sessionDate = getSessionDateTime(s)
+      return sessionDate ? isSameDay(sessionDate, today) : false
     })
 
     const averageRating = sessionFeedbacks.length > 0
@@ -62,7 +61,11 @@ export default function EnhancedMentorDashboard({
       newFeedbackCount: unreadFeedbacks.length,
       todaysSessions,
       upcomingSessionsList: upcomingSessions
-        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+        .sort((a, b) => {
+          const dateA = getSessionDateTime(a)?.getTime() ?? 0
+          const dateB = getSessionDateTime(b)?.getTime() ?? 0
+          return dateA - dateB
+        })
         .slice(0, 5),
       recentFeedbacks: unreadFeedbacks
     }

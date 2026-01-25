@@ -36,7 +36,10 @@ export default function MenteeHome() {
   const recommendedMentors = useMemo(() => {
     if (!currentUser || loadingMentors) return []
 
-    let filtered = mentors.filter(mentor => mentor.role === 'MENTOR' || mentor.role === 'mentor')
+    let filtered = mentors.filter(mentor => {
+      const role = mentor.role?.toLowerCase()
+      return role === 'mentor' || role === 'both'
+    })
 
     // Category filtering
     if (selectedCategory !== 'All') {

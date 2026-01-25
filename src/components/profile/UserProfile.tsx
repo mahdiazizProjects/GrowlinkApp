@@ -10,6 +10,14 @@ interface UserProfileProps {
 }
 
 export default function UserProfile({ user, onClose, onLogout, onEdit }: UserProfileProps) {
+  const normalizedRole = user.role?.toLowerCase()
+  const isMentorLike = normalizedRole === 'mentor' || normalizedRole === 'both'
+  const roleLabel = normalizedRole === 'both'
+    ? '🤝 Mentor & Mentee'
+    : isMentorLike
+      ? '👨‍🏫 Mentor'
+      : '👤 Mentee'
+
   return (
     <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
       <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
@@ -38,11 +46,11 @@ export default function UserProfile({ user, onClose, onLogout, onEdit }: UserPro
                 <h3 className="text-2xl font-bold text-gray-900">{user.name}</h3>
                 <div className="flex items-center gap-2 mt-1">
                   <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                    user.role === 'MENTOR' || user.role === 'mentor'
+                    isMentorLike
                       ? 'bg-gradient-to-r from-primary-100 to-primary-200 text-primary-700'
                       : 'bg-blue-100 text-blue-700'
                   }`}>
-                    {(user.role === 'MENTOR' || user.role === 'mentor') ? '👨‍🏫 Mentor' : '👤 Mentee'}
+                    {roleLabel}
                   </span>
                   {user.membershipTier === 'exclusive' && (
                     <span className="px-3 py-1 rounded-full text-xs font-semibold bg-gradient-to-r from-gold-400 to-gold-600 text-white">

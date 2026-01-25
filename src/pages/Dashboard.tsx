@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { MessageSquare, User, Award } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { MessageSquare, User } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import FeedbackPrompt from '../components/feedback/FeedbackPrompt'
 import SessionFeedbackForm from '../components/feedback/SessionFeedbackForm'
@@ -12,15 +13,11 @@ import MentorAnalytics from '../components/mentor/MentorAnalytics'
 import NotificationSystem from '../components/notifications/NotificationSystem'
 import MenteeProfileModal from '../components/mentor/MenteeProfileModal'
 import MenteeDashboard from '../components/mentee/MenteeDashboard'
-import * as api from '../services/api'
 import { Session, SessionFeedback, MentorSessionNotes, MenteeSummary } from '../types'
-import { seedMentors } from '../utils/seedData'
-import { mockMentees } from '../data/mockData'
 
 export default function Dashboard() {
   const {
     currentUser,
-    setCurrentUser,
     loading,
     sessions,
     sessionFeedbacks,
@@ -30,82 +27,18 @@ export default function Dashboard() {
     addMentorSessionNotes,
     updateMentorSessionNotes,
     getMentorSessionNotes,
+    updateSession,
     markNotificationAsRead,
     getUnreadNotificationCount,
     getMentorStats,
     getMenteeSummaries
   } = useApp()
+  const navigate = useNavigate()
   const [selectedSessionForFeedback, setSelectedSessionForFeedback] = useState<Session | null>(null)
   const [selectedSessionForDetail, setSelectedSessionForDetail] = useState<Session | null>(null)
   const [selectedMentorSession, setSelectedMentorSession] = useState<Session | null>(null)
   const [selectedMentee, setSelectedMentee] = useState<MenteeSummary | null>(null)
   const [activeMentorTab, setActiveMentorTab] = useState<'dashboard' | 'mentees' | 'analytics'>('dashboard')
-
-  // Mock login for demo - will be replaced with actual auth
-  const handleLogin = async (role: 'mentee' | 'mentor' = 'mentee') => {
-    if (role === 'mentor') {
-      // Fetch first available mentor from API
-      let mentors = await api.listMentors()
-      
-      // If no mentors exist, seed the database with mock mentors
-      if (mentors.length === 0) {
-        console.log('No mentors found. Seeding database...')
-        await seedMentors()
-        // Fetch mentors again after seeding
-        mentors = await api.listMentors()
-      }
-      
-      if (mentors.length > 0) {
-        setCurrentUser(mentors[0])
-      } else {
-        console.error('Failed to seed mentors or no mentors available')
-        alert('Unable to sign in as mentor. Please check the console for errors.')
-      }
-    } else {
-      // For demo, get or create a test mentee user in the database
-      try {
-        // Try to find existing mentee users
-        const allUsers = await api.listUsers()
-        let mentee = allUsers.find(u => 
-          (u.role === 'MENTEE' || u.role === 'mentee') && 
-          u.email === 'alex@example.com'
-        )
-        
-        // If no mentee exists, create one from mock data
-        if (!mentee) {
-          const mockMentee = mockMentees[0] // Use first mock mentee
-          const createdMentee = await api.createUser({
-            username: mockMentee.username,
-            email: mockMentee.email,
-            name: mockMentee.name,
-            role: 'MENTEE',
-            bio: mockMentee.bio,
-            avatar: mockMentee.avatar,
-            location: mockMentee.location,
-            skills: mockMentee.skills || [],
-            interests: [],
-          })
-          
-          if (createdMentee) {
-            mentee = createdMentee
-            console.log('✓ Created demo mentee user:', createdMentee.name)
-          } else {
-            console.error('Failed to create mentee user')
-            alert('Unable to sign in as mentee. Please check the console for errors.')
-            return
-          }
-        }
-        
-        if (mentee) {
-          setCurrentUser(mentee)
-        }
-      } catch (error) {
-        console.error('Error signing in as mentee:', error)
-        alert('Unable to sign in as mentee. Please check the console for errors.')
-      }
-    }
-  }
-
 
   // Show loading state while checking for user
   if (loading) {
@@ -133,24 +66,17 @@ export default function Dashboard() {
 
           <div className="space-y-3">
             <button
-              onClick={() => handleLogin('mentee')}
+              onClick={() => navigate('/auth')}
               className="w-full px-6 py-3 bg-primary-600 text-white rounded-lg font-semibold hover:bg-primary-700 transition-colors flex items-center justify-center gap-2"
             >
               <User size={20} />
-              Sign In as Mentee (Demo)
-            </button>
-            <button
-              onClick={() => handleLogin('mentor')}
-              className="w-full px-6 py-3 bg-gradient-to-r from-primary-600 to-primary-800 text-white rounded-lg font-semibold hover:from-primary-700 hover:to-primary-900 transition-colors flex items-center justify-center gap-2 border-2 border-primary-500"
-            >
-              <Award size={20} />
-              Sign In as Mentor (Demo)
+              Sign In / Create Account
             </button>
           </div>
 
           <div className="mt-6 pt-6 border-t border-gray-200">
             <p className="text-xs text-gray-500 text-center">
-              💡 <strong>Tip:</strong> Sign in as Mentor to see the enhanced mentor dashboard with analytics, mentee management, and session notes.
+              💡 <strong>Tip:</strong> Complete your profile setup to unlock personalized mentoring matches.
             </p>
           </div>
         </div>
@@ -159,6 +85,7 @@ export default function Dashboard() {
   }
 
   const user = currentUser
+  const normalizedRole = user.role?.toLowerCase()
 
   // Handle feedback submission
   const handleFeedbackSubmit = (feedbackData: Omit<SessionFeedback, 'id' | 'createdAt' | 'updatedAt'>) => {
@@ -188,7 +115,7 @@ export default function Dashboard() {
   }
 
   // If user is a mentor, show enhanced mentor dashboard
-  if (user.role === 'MENTOR' || user.role === 'mentor') {
+  if (normalizedRole === 'mentor' || normalizedRole === 'both') {
     const feedbackStats = getMentorFeedbackStats(user.id)
     const mentorFeedbacks = sessionFeedbacks.filter(f => f.mentorId === user.id)
     const mentorStats = getMentorStats(user.id)
@@ -300,6 +227,7 @@ export default function Dashboard() {
                 onClose={() => setSelectedMentorSession(null)}
                 onSaveNotes={handleSaveMentorNotes}
                 onUpdateNotes={handleUpdateMentorNotes}
+                onUpdateSession={updateSession}
                 mentorId={user.id}
               />
             </div>
@@ -323,7 +251,7 @@ export default function Dashboard() {
 
   return (
     <>
-      <MenteeDashboard />
+      <MenteeDashboard onSelectSession={setSelectedSessionForDetail} />
 
       {/* Completed Sessions with Feedback Prompts - Show below dashboard */}
       {(() => {
@@ -385,6 +313,9 @@ export default function Dashboard() {
               setSelectedSessionForFeedback(selectedSessionForDetail)
             }}
             currentUserId={user.id}
+            sessionNotes={getMentorSessionNotes(selectedSessionForDetail.id)}
+            onUpdateNotes={updateMentorSessionNotes}
+            onUpdateSession={updateSession}
           />
         </div>
       )}

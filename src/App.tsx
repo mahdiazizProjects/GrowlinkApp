@@ -15,6 +15,7 @@ import Goals from './pages/Goals'
 import Habits from './pages/Habits'
 import Reflections from './pages/Reflections'
 import BecomeMentor from './pages/BecomeMentor'
+import SetupProfile from './pages/SetupProfile'
 import About from './pages/About'
 import Contact from './pages/Contact'
 import Partners from './pages/Partners'
@@ -22,6 +23,7 @@ import Careers from './pages/Careers'
 import Guidelines from './pages/Guidelines'
 import FAQ from './pages/FAQ'
 import Help from './pages/Help'
+import Auth from './pages/Auth'
 
 function App() {
   return (
@@ -44,6 +46,7 @@ function App() {
               <Route path="/habits" element={<Habits />} />
               <Route path="/journeys" element={<Reflections />} />
               <Route path="/become-mentor" element={<BecomeMentor />} />
+              <Route path="/setup" element={<SetupProfile />} />
               <Route path="/about" element={<About />} />
               <Route path="/contact" element={<Contact />} />
               <Route path="/partners" element={<Partners />} />
@@ -51,6 +54,7 @@ function App() {
               <Route path="/guidelines" element={<Guidelines />} />
               <Route path="/faq" element={<FAQ />} />
               <Route path="/help" element={<Help />} />
+              <Route path="/auth" element={<Auth />} />
             </Routes>
           </main>
           <Footer />

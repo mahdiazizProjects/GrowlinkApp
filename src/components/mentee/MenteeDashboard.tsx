@@ -3,8 +3,14 @@ import { Link } from 'react-router-dom'
 import { Flame, Star, Clock, Target, Calendar, CheckCircle, Users, ArrowRight } from 'lucide-react'
 import { useApp } from '../../context/AppContext'
 import { parseISO, format, differenceInDays, subDays } from 'date-fns'
+import { Session } from '../../types'
+import { getSessionDateTime, isUpcomingSession } from '../../utils/sessionTime'
 
-export default function MenteeDashboard() {
+interface MenteeDashboardProps {
+  onSelectSession?: (session: Session) => void
+}
+
+export default function MenteeDashboard({ onSelectSession }: MenteeDashboardProps) {
   const {
     currentUser,
     sessions,
@@ -98,7 +104,12 @@ export default function MenteeDashboard() {
   // Get upcoming sessions
   const upcomingSessions = sessions
     .filter(s => s.menteeId === currentUser.id && (s.status === 'confirmed' || s.status === 'pending'))
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+    .filter(session => isUpcomingSession(session))
+    .sort((a, b) => {
+      const dateA = getSessionDateTime(a)?.getTime() ?? 0
+      const dateB = getSessionDateTime(b)?.getTime() ?? 0
+      return dateA - dateB
+    })
     .slice(0, 3)
 
   return (
@@ -251,9 +262,12 @@ export default function MenteeDashboard() {
             ) : (
               <div className="space-y-4">
                 {upcomingSessions.map((session) => (
-                  <div
+                  <button
                     key={session.id}
-                    className="border border-gray-200 rounded-lg p-4 hover:border-primary-300 hover:bg-primary-50 transition-all"
+                    type="button"
+                    onClick={() => onSelectSession?.(session)}
+                    className="w-full text-left border border-gray-200 rounded-lg p-4 hover:border-primary-300 hover:bg-primary-50 transition-all"
+                    disabled={!onSelectSession}
                   >
                     <div className="flex items-center justify-between mb-2">
                       <span className="font-semibold text-gray-900">
@@ -265,7 +279,7 @@ export default function MenteeDashboard() {
                     </div>
                     <p className="text-gray-700 text-sm">{session.topic || 'Session'}</p>
                     <p className="text-xs text-gray-500 mt-1">{session.time}</p>
-                  </div>
+                  </button>
                 ))}
                 <Link
                   to="/mentors"
@@ -365,6 +379,8 @@ function GettingStartedCard({ icon, title, description, link, completed }: Getti
     </Link>
   )
 }
+
+
 
 
 

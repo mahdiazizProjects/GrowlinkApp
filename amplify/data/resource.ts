@@ -15,6 +15,8 @@ const schema = a.schema({
     mentorshipCategories: a.hasMany('Category', 'userId'),
     reflections: a.hasMany('Reflection', 'userId'),
     journeys: a.hasMany('Journey', 'userId'),
+    journeyReactions: a.hasMany('JourneyReaction', 'userId'),
+    journeyComments: a.hasMany('JourneyComment', 'userId'),
     goals: a.hasMany('Goal', 'userId'),
     todos: a.hasMany('Todo', 'userId'),
     actionPlans: a.hasMany('ActionPlan', 'creatorId'),
@@ -37,6 +39,7 @@ const schema = a.schema({
     duration: a.integer().required(),
     status: a.enum(['PENDING', 'CONFIRMED', 'COMPLETED', 'CANCELLED']),
     notes: a.string(),
+    rejectionReason: a.string(),
     meetingLink: a.string(),
   }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
 
@@ -134,6 +137,7 @@ const schema = a.schema({
     journeyId: a.id().required(),
     journey: a.belongsTo('Journey', 'journeyId'),
     userId: a.id().required(),
+    user: a.belongsTo('User', 'userId'),
     type: a.enum(['HEART', 'CELEBRATE', 'SUPPORT']),
   }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
 
@@ -141,6 +145,7 @@ const schema = a.schema({
     journeyId: a.id().required(),
     journey: a.belongsTo('Journey', 'journeyId'),
     userId: a.id().required(),
+    user: a.belongsTo('User', 'userId'),
     text: a.string().required(),
   }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
 });
