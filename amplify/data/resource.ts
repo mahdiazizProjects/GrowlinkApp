@@ -14,6 +14,9 @@ const schema = a.schema({
     interests: a.string().array(),
     mentorshipCategories: a.hasMany('Category', 'userId'),
     reflections: a.hasMany('Reflection', 'userId'),
+    journeys: a.hasMany('Journey', 'userId'),
+    journeyReactions: a.hasMany('JourneyReaction', 'userId'),
+    journeyComments: a.hasMany('JourneyComment', 'userId'),
     goals: a.hasMany('Goal', 'userId'),
     todos: a.hasMany('Todo', 'userId'),
     actionPlans: a.hasMany('ActionPlan', 'creatorId'),
@@ -45,9 +48,7 @@ const schema = a.schema({
     date: a.date().required(),
     mood: a.enum(['GREAT', 'GOOD', 'NEUTRAL', 'BAD', 'AWFUL']),
     moodScore: a.integer(),
-    text: a.string(),
-    content: a.string(), // Keep for backward compatibility
-    isShared: a.boolean().required(),
+    text: a.string().required(),
     sharedWithMentorId: a.id(),
     mentorFeedback: a.string(),
   }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
@@ -61,6 +62,7 @@ const schema = a.schema({
     progress: a.integer(),
     dueDate: a.date(),
     todos: a.hasMany('Todo', 'goalId'),
+    journeys: a.hasMany('Journey', 'goalId'),
   }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
 
   Todo: a.model({
@@ -114,6 +116,36 @@ const schema = a.schema({
     status: a.enum(['COMPLETED', 'MISSED', 'SKIPPED']),
     notes: a.string(),
     evidence: a.string(),
+  }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
+
+  Journey: a.model({
+    userId: a.id().required(),
+    user: a.belongsTo('User', 'userId'),
+    goalId: a.id(),
+    goal: a.belongsTo('Goal', 'goalId'),
+    mood: a.enum(['GREAT', 'GOOD', 'NEUTRAL', 'BAD', 'AWFUL']),
+    text: a.string().required(),
+    visibility: a.enum(['EVERYONE', 'MENTORS', 'PRIVATE', 'SELECTED']),
+    selectedMentorIds: a.id().array(),
+    tags: a.string().array(),
+    reactions: a.hasMany('JourneyReaction', 'journeyId'),
+    comments: a.hasMany('JourneyComment', 'journeyId'),
+  }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
+
+  JourneyReaction: a.model({
+    journeyId: a.id().required(),
+    journey: a.belongsTo('Journey', 'journeyId'),
+    userId: a.id().required(),
+    user: a.belongsTo('User', 'userId'),
+    type: a.enum(['HEART', 'CELEBRATE', 'SUPPORT']),
+  }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
+
+  JourneyComment: a.model({
+    journeyId: a.id().required(),
+    journey: a.belongsTo('Journey', 'journeyId'),
+    userId: a.id().required(),
+    user: a.belongsTo('User', 'userId'),
+    text: a.string().required(),
   }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
 });
 

@@ -57,10 +57,13 @@ export default function Navbar() {
           )}
 
           {/* Mentor Navigation - Simplified */}
-          {isMentor && (
+          {isMentor && !isMentee && (
             <div className="hidden md:flex items-center space-x-1">
               <NavLink to="/dashboard" icon={<Home size={18} />} active={isActive('/dashboard')}>
                 Dashboard
+              </NavLink>
+              <NavLink to="/journeys" icon={<Sparkles size={18} />} active={isActive('/journeys')}>
+                Journeys
               </NavLink>
             </div>
           )}

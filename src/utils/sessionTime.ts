@@ -18,3 +18,4 @@ export function isUpcomingSession(session: Session, now = new Date()): boolean {
   return !!sessionDateTime && sessionDateTime.getTime() >= now.getTime()
 }
 
+

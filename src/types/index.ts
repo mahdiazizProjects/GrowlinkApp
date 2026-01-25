@@ -82,55 +82,55 @@ export interface Event {
   image?: string;
 }
 
-export interface ReflectionComment {
-  id: string;
-  reflectionId: string;
-  userId: string;
-  user?: User;
-  text: string;
-  createdAt: string;
-}
+export type ReactionType = 'heart' | 'celebrate' | 'support';
 
-export interface ReflectionReaction {
-  id: string;
-  reflectionId: string;
-  userId: string;
-  type: 'heart' | 'celebrate' | 'support';
-  createdAt: string;
-}
-
+// Reflection: Private daily/weekly check-ins for personal growth tracking
 export interface Reflection {
   id: string;
   userId: string;
   user?: User;
-  date: string;
-  goalId?: string;
-  week?: string; // Legacy field
-  mood: 'GREAT' | 'GOOD' | 'NEUTRAL' | 'BAD' | 'AWFUL';
+  date: string;                     // Required - when reflection was made
+  mood?: 'GREAT' | 'GOOD' | 'NEUTRAL' | 'BAD' | 'AWFUL';
   moodScore?: number;
-  text?: string; // Simple text field for daily reflections
-  content?: {
-    whatWentWell?: string;
-    whatFeltHard?: string;
-    insights?: string;
-  } | string; // Allow both for compatibility
-  // Social media features
-  visibility: 'everyone' | 'mentors' | 'private' | 'selected'; // Sharing visibility
-  selectedMentorIds?: string[]; // For 'selected' visibility
-  tags?: string[]; // Optional tags for categorization
-  reactions?: ReflectionReaction[];
-  comments?: ReflectionComment[];
-  // Legacy fields
-  isShared: boolean;
-  sharedWithMentorId?: string;
-  mentorFeedback?: {
-    mentorId: string;
-    feedback: string;
-    createdAt: string;
-  } | string; // Allow both
-  aiInsights?: string; // Legacy field
+  text: string;                     // Required - main reflection text
+  sharedWithMentorId?: string;      // Can share with specific mentor
+  mentorFeedback?: string;
+  aiInsights?: string;
   createdAt: string;
   updatedAt?: string;
+}
+
+export interface Journey {
+  id: string;
+  userId: string;
+  user?: User;
+  goalId?: string;
+  mood?: 'GREAT' | 'GOOD' | 'NEUTRAL' | 'BAD' | 'AWFUL';
+  text: string;
+  visibility: 'everyone' | 'mentors' | 'private' | 'selected';
+  selectedMentorIds?: string[];
+  tags?: string[];
+  reactions?: JourneyReaction[];
+  comments?: JourneyComment[];
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface JourneyReaction {
+  id: string;
+  journeyId: string;
+  userId: string;
+  type: ReactionType;
+  createdAt: string;
+}
+
+export interface JourneyComment {
+  id: string;
+  journeyId: string;
+  userId: string;
+  user?: User;
+  text: string;
+  createdAt: string;
 }
 
 export interface Review {

@@ -1,19 +1,42 @@
+import { useState, useEffect } from 'react'
 import { useApp } from '../context/AppContext'
-import ReflectionComposer from '../components/reflections/ReflectionComposer'
-import ReflectionFeed from '../components/reflections/ReflectionFeed'
+import JourneyComposer from '../components/journeys/JourneyComposer'
+import JourneyFeed from '../components/journeys/JourneyFeed'
 import { Sparkles } from 'lucide-react'
-import { Reflection, User } from '../types'
-import { mockMentors, mockMentees } from '../data/mockData'
+import { Journey, User } from '../types'
+import * as api from '../services/api'
 
 export default function Reflections() {
   const {
     currentUser,
-    reflections,
+    journeys,
     goals,
-    addReflection,
-    addReactionToReflection,
-    addCommentToReflection
+    sessions,
+    addJourney,
+    addReactionToJourney,
+    addCommentToJourney
   } = useApp()
+
+  const [allUsers, setAllUsers] = useState<User[]>([])
+
+  // Fetch all users for reaction tooltips
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const users = await api.listUsers()
+        setAllUsers(users)
+      } catch (error) {
+        console.error('Error fetching users:', error)
+        // Fallback to just current user if fetch fails
+        if (currentUser) {
+          setAllUsers([currentUser])
+        }
+      }
+    }
+    if (currentUser) {
+      fetchUsers()
+    }
+  }, [currentUser])
 
   if (!currentUser) {
     return (
@@ -26,19 +49,19 @@ export default function Reflections() {
     )
   }
 
-  // Mock users data - in production, this would come from context or API
-  const mockUsers: User[] = [
-    currentUser,
-    ...mockMentors,
-    ...mockMentees
-  ]
+  // Ensure currentUser is in the list
+  const usersWithCurrent = allUsers.length > 0 
+    ? allUsers.some(u => u.id === currentUser.id) 
+      ? allUsers 
+      : [currentUser, ...allUsers]
+    : [currentUser]
 
-  const mentors = mockUsers.filter(u => {
+  const mentors = usersWithCurrent.filter(u => {
     const role = u.role?.toLowerCase()
     return role === 'mentor' || role === 'both'
   })
 
-  const handleSubmitReflection = (reflectionData: {
+  const handleSubmitJourney = (journeyData: {
     text: string
     mood: 'GREAT' | 'GOOD' | 'NEUTRAL' | 'BAD' | 'AWFUL'
     visibility: 'everyone' | 'mentors' | 'private' | 'selected'
@@ -46,42 +69,39 @@ export default function Reflections() {
     tags?: string[]
     goalId?: string
   }) => {
-    const newReflection: Reflection = {
-      id: `reflection-${Date.now()}`,
+    const newJourney: Journey = {
+      id: `journey-${Date.now()}`,
       userId: currentUser.id,
       user: currentUser,
-      date: new Date().toISOString().split('T')[0],
-      mood: reflectionData.mood,
-      text: reflectionData.text,
-      content: reflectionData.text,
-      visibility: reflectionData.visibility,
-      selectedMentorIds: reflectionData.selectedMentorIds,
-      tags: reflectionData.tags,
-      goalId: reflectionData.goalId,
-      isShared: reflectionData.visibility !== 'private',
+      mood: journeyData.mood,
+      text: journeyData.text,
+      visibility: journeyData.visibility,
+      selectedMentorIds: journeyData.selectedMentorIds,
+      tags: journeyData.tags,
+      goalId: journeyData.goalId,
       reactions: [],
       comments: [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     }
-    addReflection(newReflection)
+    addJourney(newJourney)
   }
 
-  const handleReact = (reflectionId: string, reactionType: 'heart' | 'celebrate' | 'support') => {
-    addReactionToReflection(reflectionId, currentUser.id, reactionType)
+  const handleReact = (journeyId: string, reactionType: 'heart' | 'celebrate' | 'support') => {
+    addReactionToJourney(journeyId, currentUser.id, reactionType)
   }
 
-  const handleComment = (reflectionId: string, text: string) => {
-    addCommentToReflection(reflectionId, currentUser.id, text)
+  const handleComment = (journeyId: string, text: string) => {
+    addCommentToJourney(journeyId, currentUser.id, text)
   }
 
-  // Enrich reflections with user data
-  const enrichedReflections = reflections.map(reflection => ({
-    ...reflection,
-    user: reflection.user || mockUsers.find(u => u.id === reflection.userId),
-    comments: reflection.comments?.map(comment => ({
+  // Enrich journeys with user data
+  const enrichedJourneys = journeys.map(journey => ({
+    ...journey,
+    user: journey.user || usersWithCurrent.find(u => u.id === journey.userId),
+    comments: journey.comments?.map(comment => ({
       ...comment,
-      user: comment.user || mockUsers.find(u => u.id === comment.userId)
+      user: comment.user || usersWithCurrent.find(u => u.id === comment.userId)
     }))
   }))
 
@@ -103,19 +123,20 @@ export default function Reflections() {
 
         {/* Composer */}
         <div className="mb-6">
-          <ReflectionComposer
+          <JourneyComposer
             currentUser={currentUser}
             mentors={mentors}
             goals={goals}
-            onSubmit={handleSubmitReflection}
+            onSubmit={handleSubmitJourney}
           />
         </div>
 
         {/* Feed */}
-        <ReflectionFeed
-          reflections={enrichedReflections}
+        <JourneyFeed
+          journeys={enrichedJourneys}
           currentUser={currentUser}
-          allUsers={mockUsers}
+          allUsers={usersWithCurrent}
+          sessions={sessions}
           onReact={handleReact}
           onComment={handleComment}
         />

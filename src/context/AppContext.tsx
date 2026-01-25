@@ -1,6 +1,6 @@
-import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react'
+import { User, Venue, Session, Event, Rating, Goal, Habit, HabitCompletion, Reflection, Journey, Badge, SessionFeedback, MentorFeedbackStats, MentorSessionNotes, Notification, MentorStats, MenteeSummary, ReactionType } from '../types'
 import { fetchUserAttributes, getCurrentUser, signOut } from 'aws-amplify/auth'
-import { User, Venue, Session, Event, Rating, Goal, Habit, HabitCompletion, Reflection, ReflectionComment, ReflectionReaction, Badge, SessionFeedback, MentorFeedbackStats, MentorSessionNotes, Notification, MentorStats, MenteeSummary } from '../types'
 import * as api from '../services/api'
 
 interface AppContextType {
@@ -17,6 +17,7 @@ interface AppContextType {
   habits: Habit[]
   habitCompletions: HabitCompletion[]
   reflections: Reflection[]
+  journeys: Journey[]
   badges: Badge[]
   sessionFeedbacks: SessionFeedback[]
   mentorSessionNotes: MentorSessionNotes[]
@@ -32,8 +33,9 @@ interface AppContextType {
   updateHabit: (habitId: string, updates: Partial<Habit>) => Promise<void>
   toggleHabitCompletion: (habitId: string, date: string) => void
   addReflection: (reflection: Reflection) => Promise<void>
-  addReactionToReflection: (reflectionId: string, userId: string, type: 'heart' | 'celebrate' | 'support') => void
-  addCommentToReflection: (reflectionId: string, userId: string, text: string) => void
+  addJourney: (journey: Journey) => Promise<void>
+  addReactionToJourney: (journeyId: string, userId: string, type: ReactionType) => Promise<void>
+  addCommentToJourney: (journeyId: string, userId: string, text: string) => Promise<void>
   addBadge: (badge: Badge) => void
   addSessionFeedback: (feedback: SessionFeedback) => Promise<void>
   getMentorFeedbackStats: (mentorId: string) => MentorFeedbackStats | null
@@ -120,6 +122,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [habits, setHabits] = useState<Habit[]>([])
   const [habitCompletions, setHabitCompletions] = useState<HabitCompletion[]>([])
   const [reflections, setReflections] = useState<Reflection[]>([])
+  const [journeys, setJourneys] = useState<Journey[]>([])
   const [badges, setBadges] = useState<Badge[]>([])
   const [sessionFeedbacks, setSessionFeedbacks] = useState<SessionFeedback[]>([])
   const [mentorSessionNotes, setMentorSessionNotes] = useState<MentorSessionNotes[]>([])
@@ -172,7 +175,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
         // Load user-specific data if logged in
         if (currentUser?.id) {
-          const [sessionsData, goalsData, habitsData, reflectionsData] = await Promise.all([
+          const [sessionsData, goalsData, habitsData, reflectionsData, journeysData] = await Promise.all([
             Promise.all([
               api.listSessionsForUser(currentUser.id, 'mentor'),
               api.listSessionsForUser(currentUser.id, 'mentee')
@@ -180,12 +183,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
             api.listGoals(currentUser.id),
             api.listHabits(currentUser.id),
             api.listReflections(currentUser.id),
+            api.listJourneys(), // Load all journeys - filtering by visibility happens in JourneyFeed
           ])
-          
+
           setSessions(sessionsData)
           setGoals(goalsData)
           setHabits(habitsData)
           setReflections(reflectionsData)
+          setJourneys(journeysData)
         } else {
           // Load public data
           const sessionsData = await api.listSessions()
@@ -348,66 +353,65 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  const addReactionToReflection = (reflectionId: string, userId: string, type: 'heart' | 'celebrate' | 'support') => {
-    setReflections(reflections.map(r => {
-      if (r.id !== reflectionId) return r
+  const addJourney = async (journey: Journey) => {
+    try {
+      const created = await api.createJourney(journey)
+      if (created) {
+        setJourneys(prev => [created, ...prev])
+      }
+    } catch (error) {
+      console.error('Error creating journey:', error)
+    }
+  }
 
+  const addReactionToJourney = async (journeyId: string, userId: string, type: ReactionType) => {
+    try {
       // Check if user already reacted
-      const existingReactions = r.reactions || []
-      const userReaction = existingReactions.find(reaction => reaction.userId === userId)
+      const journey = journeys.find(j => j.id === journeyId)
+      if (!journey) return
+
+      const existingReactions = journey.reactions || []
+      const userReaction = existingReactions.find(r => r.userId === userId)
 
       if (userReaction) {
         // If same type, remove the reaction (toggle off)
         if (userReaction.type === type) {
-          return {
-            ...r,
-            reactions: existingReactions.filter(reaction => reaction.userId !== userId)
-          }
+          await api.deleteJourneyReaction(userReaction.id)
         } else {
-          // Change reaction type
-          return {
-            ...r,
-            reactions: existingReactions.map(reaction =>
-              reaction.userId === userId
-                ? { ...reaction, type }
-                : reaction
-            )
-          }
+          // Change reaction type - delete old and create new
+          await api.deleteJourneyReaction(userReaction.id)
+          await api.createJourneyReaction({ journeyId, userId, type })
         }
       } else {
         // Add new reaction
-        const newReaction: ReflectionReaction = {
-          id: `reaction-${Date.now()}`,
-          reflectionId,
-          userId,
-          type,
-          createdAt: new Date().toISOString()
-        }
-        return {
-          ...r,
-          reactions: [...existingReactions, newReaction]
-        }
+        await api.createJourneyReaction({ journeyId, userId, type })
       }
-    }))
+
+      // Refetch the journey to get all reactions (including from other users)
+      const updatedJourney = await api.getJourney(journeyId)
+      if (updatedJourney) {
+        setJourneys(journeys.map(j =>
+          j.id === journeyId ? updatedJourney : j
+        ))
+      }
+    } catch (error) {
+      console.error('Error managing journey reaction:', error)
+    }
   }
 
-  const addCommentToReflection = (reflectionId: string, userId: string, text: string) => {
-    setReflections(reflections.map(r => {
-      if (r.id !== reflectionId) return r
-
-      const newComment: ReflectionComment = {
-        id: `comment-${Date.now()}`,
-        reflectionId,
-        userId,
-        text,
-        createdAt: new Date().toISOString()
+  const addCommentToJourney = async (journeyId: string, userId: string, text: string) => {
+    try {
+      const newComment = await api.createJourneyComment({ journeyId, userId, text })
+      if (newComment) {
+        setJourneys(journeys.map(j =>
+          j.id === journeyId
+            ? { ...j, comments: [...(j.comments || []), newComment] }
+            : j
+        ))
       }
-
-      return {
-        ...r,
-        comments: [...(r.comments || []), newComment]
-      }
-    }))
+    } catch (error) {
+      console.error('Error adding journey comment:', error)
+    }
   }
 
   const addBadge = (badge: Badge) => {
@@ -589,6 +593,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       habits,
       habitCompletions,
       reflections,
+      journeys,
       badges,
       sessionFeedbacks,
       mentorSessionNotes,
@@ -604,8 +609,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       updateHabit,
       toggleHabitCompletion,
       addReflection,
-      addReactionToReflection,
-      addCommentToReflection,
+      addJourney,
+      addReactionToJourney,
+      addCommentToJourney,
       addBadge,
       addSessionFeedback,
       getMentorFeedbackStats,
