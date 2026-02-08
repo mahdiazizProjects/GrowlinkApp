@@ -99,7 +99,7 @@ export default function Reflections() {
   const enrichedJourneys = journeys.map(journey => ({
     ...journey,
     user: journey.user || usersWithCurrent.find(u => u.id === journey.userId),
-    comments: journey.comments?.map(comment => ({
+    comments: journey.comments?.map((comment) => ({
       ...comment,
       user: comment.user || usersWithCurrent.find(u => u.id === comment.userId)
     }))

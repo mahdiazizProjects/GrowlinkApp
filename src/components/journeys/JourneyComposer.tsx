@@ -109,7 +109,7 @@ export default function JourneyComposer({
   const selectedVisibilityOption = VISIBILITY_OPTIONS.find(opt => opt.value === visibility)
   const VisibilityIcon = selectedVisibilityOption?.icon || Globe
 
-  const activeGoals = goals.filter(g => g.status === 'active' || g.status === 'ACTIVE')
+  const activeGoals = goals.filter(g => g.status === 'active')
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">

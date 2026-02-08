@@ -131,8 +131,8 @@ export default function Goals() {
         
         // Get existing action items
         const existingItems = await api.listActionItems(actionPlanId)
-        const existingItemMap = new Map(existingItems.map(item => [item.id, item]))
-        const existingItemIds = new Set(existingItems.map(item => item.id))
+        const existingItemMap = new Map(existingItems.map((item: { id: string }) => [item.id, item]))
+        const existingItemIds = new Set(existingItems.map((item: { id: string }) => item.id))
         
         // Track which items are being kept (matched by actionItemId)
         const keptItemIds = new Set<string>()
@@ -169,7 +169,7 @@ export default function Goals() {
         await Promise.all(updatePromises)
         
         // Delete items that were removed (not in keptItemIds)
-        const itemsToDelete = Array.from(existingItemIds).filter(id => !keptItemIds.has(id))
+        const itemsToDelete = Array.from(existingItemIds).filter((id: string) => !keptItemIds.has(id))
         if (itemsToDelete.length > 0) {
           console.log('Goals: Deleting', itemsToDelete.length, 'removed action items')
           const deletePromises = itemsToDelete.map(itemId => 

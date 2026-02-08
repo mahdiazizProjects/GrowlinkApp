@@ -8,7 +8,7 @@ import { User } from '../types'
 export default function BookSession() {
   const { mentorId } = useParams()
   const navigate = useNavigate()
-  const { venues, addSession, currentUser } = useApp()
+  const { venues, addSession, currentUser, getAvailableSlotsForMentor } = useApp()
   const [mentor, setMentor] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -49,44 +49,11 @@ export default function BookSession() {
   const [time, setTime] = useState('')
   const [topic, setTopic] = useState('')
 
-  // Generate 15-minute time slots
-  const generateTimeSlots = (selectedDate: string): string[] => {
-    const slots: string[] = []
-    const today = new Date()
-    const selected = selectedDate ? new Date(selectedDate + 'T00:00:00') : null
-    const isToday = selected && selected.toDateString() === today.toDateString()
-
-    // Start time: if today, start from next 15-minute interval after current time, otherwise 9:00 AM
-    let startHour = 9
-    let startMinute = 0
-
-    if (isToday) {
-      const now = new Date()
-      startHour = now.getHours()
-      startMinute = Math.ceil(now.getMinutes() / 15) * 15
-      if (startMinute >= 60) {
-        startHour += 1
-        startMinute = 0
-      }
-      // If it's too late (after 8 PM), start from tomorrow 9 AM
-      if (startHour >= 20) {
-        return []
-      }
-    }
-
-    // Generate slots from start time to 8:00 PM (20:00)
-    for (let hour = startHour; hour < 20; hour++) {
-      const minStart = hour === startHour ? startMinute : 0
-      for (let minute = minStart; minute < 60; minute += 15) {
-        const timeString = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`
-        slots.push(timeString)
-      }
-    }
-
-    return slots
-  }
-
-  const timeSlots = useMemo(() => generateTimeSlots(date), [date])
+  // Slots based on mentor's defined availability (and existing bookings)
+  const timeSlots = useMemo(() => {
+    if (!mentorId || !date) return []
+    return getAvailableSlotsForMentor(mentorId, date, 60)
+  }, [mentorId, date, getAvailableSlotsForMentor])
 
   if (loading || !mentor || !currentUser) {
     if (loading) {
@@ -136,24 +103,23 @@ export default function BookSession() {
   const price = sessionType === 'in-person' ? inPersonPrice : virtualPrice
   const discount = sessionType === 'in-person' ? virtualPrice - inPersonPrice : 0
 
-  // Handle "Book Now" - complete the entire booking process immediately
+  // Handle "Book Now" - book first available slot based on mentor's availability
   const handleBookNow = async () => {
     if (!currentUser || !mentor) return
 
-    const now = new Date()
     const today = new Date().toISOString().split('T')[0]
-    const nextSlot = Math.ceil(now.getMinutes() / 15) * 15
-    let nextHour = now.getHours()
-    let nextMin = nextSlot >= 60 ? 0 : nextSlot
-    if (nextSlot >= 60) nextHour += 1
-
-    const bookingDate = nextHour >= 20 
-      ? new Date(Date.now() + 86400000).toISOString().split('T')[0]
-      : today
-    const bookingTime = nextHour >= 20 ? '09:00' : `${String(nextHour).padStart(2, '0')}:${String(nextMin).padStart(2, '0')}`
-
-    const slots = generateTimeSlots(bookingDate)
-    const validTime = slots.length > 0 && slots.includes(bookingTime) ? bookingTime : slots[0] || '09:00'
+    let bookingDate = today
+    let slots = getAvailableSlotsForMentor(mentor.id, bookingDate, 60)
+    if (slots.length === 0) {
+      const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0]
+      bookingDate = tomorrow
+      slots = getAvailableSlotsForMentor(mentor.id, bookingDate, 60)
+    }
+    const validTime = slots.length > 0 ? slots[0] : null
+    if (!validTime) {
+      alert('No available slots in the mentor’s schedule. Please try "Schedule for Later" and pick a date.')
+      return
+    }
     const finalTopic = topic || `Quick session with ${mentor.name}`
 
     const sessionDateTime = new Date(`${bookingDate}T${validTime}:00`)
@@ -161,9 +127,11 @@ export default function BookSession() {
       mentorId: mentor.id,
       menteeId: currentUser.id,
       date: sessionDateTime.toISOString(),
+      time: validTime,
       duration: 60,
       status: 'pending' as const,
       notes: finalTopic,
+      topic: finalTopic,
       meetingLink: sessionType === 'virtual' ? `https://meet.example.com/${Date.now()}` : undefined,
     }
 
@@ -193,9 +161,11 @@ export default function BookSession() {
       mentorId: mentor.id,
       menteeId: currentUser.id,
       date: sessionDateTime.toISOString(),
+      time,
       duration: 60,
       status: 'pending' as const,
       notes: topic,
+      topic,
       meetingLink: sessionType === 'virtual' ? `https://meet.example.com/${Date.now()}` : undefined,
     }
 

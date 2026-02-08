@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
-import { X, Save, Calendar, User, Star, MessageSquare, FileText } from 'lucide-react'
-import { Session, SessionFeedback, MentorSessionNotes, SessionActionItem } from '../../types'
-import { format, isValid, parse } from 'date-fns'
+import { X, Save, Calendar, User, Star, MessageSquare, FileText, AlertCircle } from 'lucide-react'
+import { Session, SessionFeedback, MentorSessionNotes } from '../../types'
+import { format } from 'date-fns'
 
 interface MentorSessionDetailModalProps {
   session: Session
@@ -10,7 +10,7 @@ interface MentorSessionDetailModalProps {
   onClose: () => void
   onSaveNotes: (notes: Omit<MentorSessionNotes, 'id' | 'createdAt' | 'updatedAt'>) => void
   onUpdateNotes: (noteId: string, updates: Partial<MentorSessionNotes>) => void
-  onUpdateSession: (sessionId: string, updates: Partial<Session>) => void
+  onUpdateSession?: (sessionId: string, updates: Partial<Session>) => Promise<void>
   mentorId: string
 }
 
@@ -28,10 +28,10 @@ export default function MentorSessionDetailModal({
   const [followUps, setFollowUps] = useState(existingNotes?.followUps || '')
   const [growthFocus, setGrowthFocus] = useState(existingNotes?.growthFocus || '')
   const [privateNotes, setPrivateNotes] = useState(existingNotes?.privateNotes || '')
-  const [actionItems, setActionItems] = useState<SessionActionItem[]>(existingNotes?.actionItems || [])
   const [isEditing, setIsEditing] = useState(!existingNotes)
-  const [decisionReason, setDecisionReason] = useState('')
-  const [decisionError, setDecisionError] = useState<string | null>(null)
+  const [showCancelForm, setShowCancelForm] = useState(false)
+  const [cancellationReason, setCancellationReason] = useState('')
+  const [cancelling, setCancelling] = useState(false)
 
   useEffect(() => {
     if (existingNotes) {
@@ -39,7 +39,6 @@ export default function MentorSessionDetailModal({
       setFollowUps(existingNotes.followUps)
       setGrowthFocus(existingNotes.growthFocus || '')
       setPrivateNotes(existingNotes.privateNotes || '')
-      setActionItems(existingNotes.actionItems || [])
     }
   }, [existingNotes])
 
@@ -48,7 +47,6 @@ export default function MentorSessionDetailModal({
       onUpdateNotes(existingNotes.id, {
         summary,
         followUps,
-        actionItems,
         growthFocus,
         privateNotes
       })
@@ -58,7 +56,6 @@ export default function MentorSessionDetailModal({
         mentorId,
         summary,
         followUps,
-        actionItems,
         growthFocus: growthFocus || undefined,
         privateNotes: privateNotes || undefined
       })
@@ -66,67 +63,38 @@ export default function MentorSessionDetailModal({
     setIsEditing(false)
   }
 
-  const sessionDate = (() => {
-    if (session.date) {
-      const fromIso = new Date(session.date)
-      if (isValid(fromIso)) return fromIso
-    }
-    if (session.date && session.time) {
-      const parsed = parse(`${session.date} ${session.time}`, 'yyyy-MM-dd h:mm a', new Date())
-      if (isValid(parsed)) return parsed
-    }
-    return null
-  })()
-  const timeLabel = session.time || 'Time TBD'
-  const dateLabel = sessionDate ? format(sessionDate, 'MMM d, yyyy') : 'Date TBD'
-  const fullDateLabel = sessionDate ? format(sessionDate, 'EEEE, MMMM d, yyyy') : 'Date TBD'
-  const normalizedStatus = session.status.toLowerCase()
-  const now = new Date()
-  const sessionDateTime = sessionDate
-  const hoursUntil = sessionDateTime ? (sessionDateTime.getTime() - now.getTime()) / 36e5 : null
-  const canAccept = normalizedStatus === 'pending' && !!sessionDateTime && hoursUntil !== null && hoursUntil > 0
-  const canReject = normalizedStatus === 'pending' && !!sessionDateTime && hoursUntil !== null && hoursUntil >= 24
+  const sessionTime = session.time && session.time.length >= 5 ? session.time.slice(0, 5) : session.date.slice(11, 16)
+  const sessionDate = new Date(`${session.date.slice(0, 10)}T${sessionTime || '00:00'}:00`)
+  const isWithin24h = sessionDate.getTime() - Date.now() < 24 * 60 * 60 * 1000
+  const canCancel = !session.cancelledAt && (session.status === 'pending' || session.status === 'PENDING' || session.status === 'confirmed' || session.status === 'CONFIRMED')
 
-  const handleAccept = async () => {
-    setDecisionError(null)
-    if (!canAccept) {
-      setDecisionError('This session can no longer be accepted.')
-      return
+  const handleRequestCancel = async () => {
+    if (!cancellationReason.trim() || !onUpdateSession) return
+    setCancelling(true)
+    try {
+      if (isWithin24h) {
+        await onUpdateSession(session.id, {
+          cancellationRequestedAt: new Date().toISOString(),
+          cancellationReason: cancellationReason.trim()
+        })
+        setShowCancelForm(false)
+        setCancellationReason('')
+        // Mentee must accept; they will see the request in their session detail
+      } else {
+        await onUpdateSession(session.id, {
+          status: 'cancelled',
+          cancelledAt: new Date().toISOString(),
+          cancelledBy: 'mentor',
+          cancellationReason: cancellationReason.trim()
+        })
+        setShowCancelForm(false)
+        setCancellationReason('')
+        onClose()
+        // In production: send email to mentee
+      }
+    } finally {
+      setCancelling(false)
     }
-    await onUpdateSession(session.id, { status: 'confirmed' })
-    onClose()
-  }
-
-  const handleReject = async () => {
-    setDecisionError(null)
-    if (!canReject) {
-      setDecisionError('Rejections are only allowed more than 24 hours before the session.')
-      return
-    }
-    if (decisionReason.trim().length < 5) {
-      setDecisionError('Please provide a brief reason (at least 5 characters).')
-      return
-    }
-    await onUpdateSession(session.id, { 
-      status: 'cancelled',
-      rejectionReason: decisionReason.trim()
-    })
-    onClose()
-  }
-
-  const addActionItem = () => {
-    setActionItems(prev => [
-      ...prev,
-      { id: `action-${Date.now()}`, text: '', dueDate: undefined, completed: false }
-    ])
-  }
-
-  const updateActionItem = (itemId: string, updates: Partial<SessionActionItem>) => {
-    setActionItems(prev => prev.map(item => item.id === itemId ? { ...item, ...updates } : item))
-  }
-
-  const removeActionItem = (itemId: string) => {
-    setActionItems(prev => prev.filter(item => item.id !== itemId))
   }
 
   return (
@@ -135,7 +103,7 @@ export default function MentorSessionDetailModal({
         <div>
           <h2 className="text-2xl font-bold text-gray-900">Session Details</h2>
           <p className="text-sm text-gray-600 mt-1">
-            {dateLabel} at {timeLabel} • {session.topic}
+            {format(sessionDate, 'MMM d, yyyy')} at {sessionTime} • {session.topic}
           </p>
         </div>
         <button
@@ -161,11 +129,73 @@ export default function MentorSessionDetailModal({
             <div>
               <p className="text-sm text-gray-600">Date & Time</p>
               <p className="font-semibold text-gray-900">
-                {fullDateLabel} at {timeLabel}
+                {format(sessionDate, 'EEEE, MMMM d, yyyy')} at {sessionTime}
               </p>
             </div>
           </div>
         </div>
+
+        {/* Cancellation request (within 24h) */}
+        {session.cancellationRequestedAt && (
+          <div className="flex items-center gap-2 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+            <AlertCircle className="text-amber-600 shrink-0" size={20} />
+            <div>
+              <p className="font-semibold text-amber-800">Cancellation requested</p>
+              <p className="text-sm text-amber-700">Reason: {session.cancellationReason}. Waiting for mentee to accept or reject.</p>
+            </div>
+          </div>
+        )}
+
+        {/* Cancel session (mentor) */}
+        {canCancel && onUpdateSession && !session.cancellationRequestedAt && (
+          <div className="border-t border-gray-200 pt-6">
+            <div className="flex items-center gap-2 mb-2">
+              <AlertCircle className="text-primary-600" size={20} />
+              <h3 className="text-lg font-semibold text-gray-900">Cancel session</h3>
+            </div>
+            {!showCancelForm ? (
+              <button
+                type="button"
+                onClick={() => setShowCancelForm(true)}
+                className="text-sm text-red-600 hover:underline"
+              >
+                I need to cancel this session
+              </button>
+            ) : (
+              <div className="space-y-3 p-4 bg-gray-50 rounded-lg">
+                <p className="text-sm text-gray-700">
+                  {isWithin24h
+                    ? 'Within 24 hours: the mentee must accept your reason. If they reject, you may be penalised.'
+                    : 'More than 24 hours before: you may cancel. The mentee will be notified (e.g. by email).'}
+                </p>
+                <textarea
+                  value={cancellationReason}
+                  onChange={(e) => setCancellationReason(e.target.value)}
+                  placeholder="Reason for cancellation (required)"
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                />
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleRequestCancel}
+                    disabled={!cancellationReason.trim() || cancelling}
+                    className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-50"
+                  >
+                    {cancelling ? 'Processing…' : isWithin24h ? 'Request cancellation' : 'Cancel session'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setShowCancelForm(false); setCancellationReason('') }}
+                    className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-300"
+                  >
+                    Back
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Status */}
         <div>
@@ -177,46 +207,6 @@ export default function MentorSessionDetailModal({
             {session.status.charAt(0).toUpperCase() + session.status.slice(1)}
           </span>
         </div>
-
-        {normalizedStatus === 'pending' && (
-          <div className="border-t border-gray-200 pt-4 space-y-3">
-            <div>
-              <p className="text-sm font-semibold text-gray-700 mb-2">Pending request actions</p>
-              <p className="text-sm text-gray-500">
-                Accept any time before the session starts. Rejections require a reason and must be more than 24 hours before the session.
-              </p>
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">Rejection reason</label>
-              <textarea
-                value={decisionReason}
-                onChange={(e) => setDecisionReason(e.target.value)}
-                placeholder="Explain why you are rejecting this request."
-                rows={3}
-                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none resize-none border-gray-300"
-              />
-            </div>
-            {decisionError && <p className="text-sm text-red-600">{decisionError}</p>}
-            <div className="flex flex-wrap gap-3">
-              <button
-                type="button"
-                onClick={handleAccept}
-                disabled={!canAccept}
-                className="px-4 py-2 bg-primary-600 text-white rounded-lg font-semibold hover:bg-primary-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                Accept session
-              </button>
-              <button
-                type="button"
-                onClick={handleReject}
-                disabled={!canReject}
-                className="px-4 py-2 border border-red-500 text-red-600 rounded-lg font-semibold hover:bg-red-50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                Reject session
-              </button>
-            </div>
-          </div>
-        )}
 
         {/* Mentee Feedback Section */}
         {session.status === 'completed' && feedback && (
@@ -327,67 +317,6 @@ export default function MentorSessionDetailModal({
                 className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none resize-none ${isEditing ? 'border-gray-300' : 'border-gray-200 bg-gray-50'
                   }`}
               />
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="block text-sm font-semibold text-gray-700">
-                  Action Items for Mentee
-                </label>
-                {isEditing && (
-                  <button
-                    type="button"
-                    onClick={addActionItem}
-                    className="text-sm text-primary-600 hover:text-primary-700 font-semibold"
-                  >
-                    + Add item
-                  </button>
-                )}
-              </div>
-              {actionItems.length === 0 ? (
-                <p className="text-sm text-gray-500">No action items yet.</p>
-              ) : (
-                <div className="space-y-3">
-                  {actionItems.map(item => (
-                    <div key={item.id} className="flex flex-col md:flex-row gap-3 md:items-center">
-                      <input
-                        type="text"
-                        value={item.text}
-                        onChange={(e) => updateActionItem(item.id, { text: e.target.value })}
-                        disabled={!isEditing}
-                        placeholder="Action item description"
-                        className={`flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none ${isEditing ? 'border-gray-300' : 'border-gray-200 bg-gray-50'}`}
-                      />
-                      <input
-                        type="date"
-                        value={item.dueDate || ''}
-                        onChange={(e) => updateActionItem(item.id, { dueDate: e.target.value || undefined })}
-                        disabled={!isEditing}
-                        className={`px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none ${isEditing ? 'border-gray-300' : 'border-gray-200 bg-gray-50'}`}
-                      />
-                      <label className="flex items-center gap-2 text-sm text-gray-600">
-                        <input
-                          type="checkbox"
-                          checked={item.completed}
-                          onChange={(e) => updateActionItem(item.id, { completed: e.target.checked })}
-                          disabled={!isEditing}
-                          className="h-4 w-4 text-primary-600"
-                        />
-                        Done
-                      </label>
-                      {isEditing && (
-                        <button
-                          type="button"
-                          onClick={() => removeActionItem(item.id)}
-                          className="text-sm text-red-500 hover:text-red-600"
-                        >
-                          Remove
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
 
             <div>

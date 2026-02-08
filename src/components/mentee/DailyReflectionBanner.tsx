@@ -47,6 +47,7 @@ export default function DailyReflectionBanner({ userId }: DailyReflectionBannerP
         mood: moodValue as 'GREAT' | 'GOOD' | 'NEUTRAL' | 'BAD' | 'AWFUL',
         moodScore: moodScore,
         text: text.trim(),
+        isShared: false,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       }

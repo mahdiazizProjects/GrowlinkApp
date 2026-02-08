@@ -26,7 +26,7 @@ export async function seedMentors(): Promise<{ created: number; skipped: number 
       try {
         // Check if user with this email already exists
         const allUsers = await api.listUsers()
-        const existingUser = allUsers.find(u => u.email === mockMentor.email)
+        const existingUser = allUsers.find((u: { email: string }) => u.email === mockMentor.email)
         
         if (existingUser) {
           console.log(`User ${mockMentor.email} already exists. Skipping.`)
@@ -77,7 +77,7 @@ export async function seedMentees(): Promise<{ created: number; skipped: number 
   try {
     // Check if mentees already exist
     const allUsers = await api.listUsers()
-    const existingMentees = allUsers.filter(u => {
+    const existingMentees = allUsers.filter((u: { role?: string }) => {
       const role = u.role?.toLowerCase()
       return role === 'mentee' || role === 'both'
     })
@@ -94,7 +94,7 @@ export async function seedMentees(): Promise<{ created: number; skipped: number 
 
     for (const mockMentee of mockMentees) {
       try {
-        const existingUser = allUsers.find(u => u.email === mockMentee.email)
+        const existingUser = allUsers.find((u: { email: string }) => u.email === mockMentee.email)
         
         if (existingUser) {
           console.log(`User ${mockMentee.email} already exists. Skipping.`)

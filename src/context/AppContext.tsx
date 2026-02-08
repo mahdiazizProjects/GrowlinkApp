@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react'
-import { User, Venue, Session, Event, Rating, Goal, Habit, HabitCompletion, Reflection, Journey, Badge, SessionFeedback, MentorFeedbackStats, MentorSessionNotes, Notification, MentorStats, MenteeSummary, ReactionType } from '../types'
+import { User, Venue, Session, Event, Rating, Goal, Habit, HabitCompletion, Reflection, Journey, Badge, SessionFeedback, MentorFeedbackStats, MentorSessionNotes, Notification, MentorStats, MenteeSummary, ReactionType, MentorAvailability } from '../types'
 import { fetchUserAttributes, getCurrentUser, signOut } from 'aws-amplify/auth'
 import * as api from '../services/api'
 
@@ -47,6 +47,9 @@ interface AppContextType {
   getUnreadNotificationCount: (userId: string) => number
   getMentorStats: (mentorId: string) => MentorStats | null
   getMenteeSummaries: (mentorId: string) => MenteeSummary[]
+  getMentorAvailability: (mentorId: string) => MentorAvailability
+  updateMentorAvailability: (mentorId: string, availability: MentorAvailability) => Promise<void>
+  getAvailableSlotsForMentor: (mentorId: string, date: string, durationMinutes?: number) => string[]
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined)
@@ -127,12 +130,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [sessionFeedbacks, setSessionFeedbacks] = useState<SessionFeedback[]>([])
   const [mentorSessionNotes, setMentorSessionNotes] = useState<MentorSessionNotes[]>([])
   const [notifications, setNotifications] = useState<Notification[]>([])
+  const [mentorAvailabilities, setMentorAvailabilities] = useState<Record<string, MentorAvailability>>({})
 
   // Load initial data when user changes
   useEffect(() => {
     const loadData = async () => {
       setLoading(true)
       try {
+        // Optional: merge server JSON from public/server-data.json (copy from server if you have it)
+        await api.loadServerData('/server-data.json')
+
         // Load venues (static for now - will be added to schema)
         setVenues([
           {
@@ -371,15 +378,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (!journey) return
 
       const existingReactions = journey.reactions || []
-      const userReaction = existingReactions.find(r => r.userId === userId)
+      const userReaction = existingReactions.find((r: { userId: string; type: string }) => r.userId === userId)
 
       if (userReaction) {
+        const reactionId = userReaction.id
         // If same type, remove the reaction (toggle off)
         if (userReaction.type === type) {
-          await api.deleteJourneyReaction(userReaction.id)
+          if (reactionId) await api.deleteJourneyReaction(reactionId)
         } else {
           // Change reaction type - delete old and create new
-          await api.deleteJourneyReaction(userReaction.id)
+          if (reactionId) await api.deleteJourneyReaction(reactionId)
           await api.createJourneyReaction({ journeyId, userId, type })
         }
       } else {
@@ -548,6 +556,79 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  const DEFAULT_AVAILABILITY_SLOTS: MentorAvailability['slots'] = [
+    { dayOfWeek: 1, startTime: '09:00', endTime: '17:00' },
+    { dayOfWeek: 2, startTime: '09:00', endTime: '17:00' },
+    { dayOfWeek: 3, startTime: '09:00', endTime: '17:00' },
+    { dayOfWeek: 4, startTime: '09:00', endTime: '17:00' },
+    { dayOfWeek: 5, startTime: '09:00', endTime: '17:00' }
+  ]
+
+  const getMentorAvailability = useCallback((mentorId: string): MentorAvailability => {
+    const stored = mentorAvailabilities[mentorId]
+    if (stored && stored.slots.length > 0) {
+      return stored
+    }
+    return {
+      mentorId,
+      slots: DEFAULT_AVAILABILITY_SLOTS,
+      updatedAt: undefined
+    }
+  }, [mentorAvailabilities])
+
+  const updateMentorAvailability = useCallback(async (mentorId: string, availability: MentorAvailability) => {
+    const updated = { ...availability, mentorId, updatedAt: new Date().toISOString() }
+    const saved = await api.updateMentorAvailability(mentorId, updated)
+    setMentorAvailabilities(prev => ({ ...prev, [mentorId]: saved }))
+  }, [])
+
+  const getAvailableSlotsForMentor = useCallback((mentorId: string, dateStr: string, durationMinutes = 60): string[] => {
+    const availability = getMentorAvailability(mentorId)
+    const d = new Date(dateStr + 'T00:00:00')
+    const dayOfWeek = d.getDay()
+    const daySlots = availability.slots.filter(s => s.dayOfWeek === dayOfWeek)
+    if (daySlots.length === 0) return []
+
+    const slots: string[] = []
+    const today = new Date()
+    const isToday = dateStr === today.toISOString().split('T')[0]
+
+    for (const range of daySlots) {
+      const [startH, startM] = range.startTime.split(':').map(Number)
+      const [endH, endM] = range.endTime.split(':').map(Number)
+      const startMinutes = startH * 60 + startM
+      const endMinutes = endH * 60 + endM
+
+      let current = startMinutes
+      while (current + durationMinutes <= endMinutes) {
+        const hour = Math.floor(current / 60)
+        const min = current % 60
+        const timeString = `${hour.toString().padStart(2, '0')}:${min.toString().padStart(2, '0')}`
+        if (isToday) {
+          const now = new Date()
+          const nowMinutes = now.getHours() * 60 + now.getMinutes()
+          if (current >= nowMinutes + 15) slots.push(timeString)
+        } else {
+          slots.push(timeString)
+        }
+        current += 15
+      }
+    }
+
+    const mentorSessions = sessions.filter(
+      s => s.mentorId === mentorId &&
+        (s.status === 'CONFIRMED' || s.status === 'confirmed' || s.status === 'PENDING' || s.status === 'pending') &&
+        !s.cancelledAt
+    )
+    const sessionDateTimes = new Set(
+      mentorSessions
+        .filter(s => s.date.slice(0, 10) === dateStr)
+        .map(s => s.time && s.time.length >= 5 ? s.time.slice(0, 5) : s.date.slice(11, 16))
+    )
+
+    return slots.filter(slot => !sessionDateTimes.has(slot))
+  }, [getMentorAvailability, sessions])
+
   const getMenteeSummaries = (mentorId: string): MenteeSummary[] => {
     const mentorSessions = sessions.filter(s => s.mentorId === mentorId)
     const menteeIds = [...new Set(mentorSessions.map(s => s.menteeId))]
@@ -622,7 +703,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       markNotificationAsRead,
       getUnreadNotificationCount,
       getMentorStats,
-      getMenteeSummaries
+      getMenteeSummaries,
+      getMentorAvailability,
+      updateMentorAvailability,
+      getAvailableSlotsForMentor
     }}>
       {children}
     </AppContext.Provider>

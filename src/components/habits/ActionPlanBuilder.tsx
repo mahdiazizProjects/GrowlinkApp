@@ -24,16 +24,19 @@ export default function ActionPlanBuilder({ goal, existingHabits = [], existingA
           const actionItems = await api.listActionItems(existingActionPlanId)
           if (actionItems.length > 0) {
             // Convert ActionItems to Habits format
-            const loadedHabits = actionItems.map(item => ({
-              actionItemId: item.id,
-              title: item.title,
-              description: item.description || '',
-              frequency: item.frequency === 'WEEKLY' ? 'weekly' as const : 'daily' as const,
-              duration: 2, // Default since ActionItem doesn't have duration
-              cue: { time: '', place: '', context: '' }, // Not stored in ActionItem
-              reward: '', // Not stored in ActionItem
-              status: item.status === 'ACTIVE' ? 'active' as const : item.status === 'PAUSED' ? 'paused' as const : 'completed' as const
-            }))
+            const loadedHabits = actionItems.map((item: { id: string; title: string; description?: string; frequency: string; status?: string }) => {
+              const status = item.status === 'ACTIVE' ? 'active' as const : item.status === 'PAUSED' ? 'paused' as const : 'completed' as const
+              return {
+                actionItemId: item.id,
+                title: item.title,
+                description: item.description || '',
+                frequency: item.frequency === 'WEEKLY' ? 'weekly' as const : 'daily' as const,
+                duration: 2,
+                cue: { time: '', place: '', context: '' },
+                reward: '',
+                status
+              }
+            })
             setHabits(loadedHabits)
           } else {
             // No items found, start with empty habit
