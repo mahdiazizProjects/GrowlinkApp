@@ -1,7 +1,8 @@
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react'
-import { User, Venue, Session, Event, Rating, Goal, Habit, HabitCompletion, Reflection, Journey, Badge, SessionFeedback, MentorFeedbackStats, MentorSessionNotes, Notification, MentorStats, MenteeSummary, ReactionType, MentorAvailability } from '../types'
+import { User, Venue, Session, Event, Rating, Goal, Habit, HabitCompletion, Reflection, Journey, JourneyComment, Badge, SessionFeedback, MentorFeedbackStats, MentorSessionNotes, Notification, MentorStats, MenteeSummary, ReactionType, MentorAvailability } from '../types'
 import { fetchUserAttributes, getCurrentUser, signOut } from 'aws-amplify/auth'
 import * as api from '../services/api'
+import { getSessionDateTime } from '../utils/sessionTime'
 
 interface AppContextType {
   currentUser: User | null
@@ -137,9 +138,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const loadData = async () => {
       setLoading(true)
       try {
-        // Optional: merge server JSON from public/server-data.json (copy from server if you have it)
-        await api.loadServerData('/server-data.json')
-
         // Load venues (static for now - will be added to schema)
         setVenues([
           {
@@ -198,10 +196,49 @@ export function AppProvider({ children }: { children: ReactNode }) {
           setHabits(habitsData)
           setReflections(reflectionsData)
           setJourneys(journeysData)
+          // Show notifications for pending session requests (notifications are in-memory; mentor sees these when they load)
+          setNotifications(prev => {
+            const existingRelated = new Set(prev.map(n => n.relatedId).filter(Boolean))
+            const pendingForMentor = sessionsData.filter(
+              s => s.mentorId === currentUser.id && s.status === 'PENDING' && !existingRelated.has(s.id)
+            )
+            const newOnes = pendingForMentor.map(s => ({
+              id: `notif-pending-${s.id}`,
+              userId: currentUser.id,
+              title: 'New Session Request',
+              message: `${s.mentee?.name || 'A mentee'} requested a session. Approve or reject from your dashboard.`,
+              type: 'session-booked' as const,
+              read: false,
+              relatedId: s.id,
+              createdAt: new Date().toISOString()
+            }))
+            return newOnes.length > 0 ? [...newOnes, ...prev] : prev
+          })
+          // Auto-cancel past sessions that were never accepted by the mentor
+          const toCancel = sessionsData.filter(s => {
+            const dt = getSessionDateTime(s)
+            const isPending = s.status === 'PENDING'
+            return isPending && !!dt && dt.getTime() < Date.now()
+          })
+          if (toCancel.length > 0) {
+            const results = await Promise.all(toCancel.map(s => api.updateSession(s.id, { status: 'CANCELLED' }).then(u => u, () => null)))
+            const updatedMap = new Map(results.filter((u): u is Session => u != null).map(u => [u.id, u]))
+            if (updatedMap.size > 0) setSessions(prev => prev.map(x => updatedMap.get(x.id) ?? x))
+          }
         } else {
           // Load public data
           const sessionsData = await api.listSessions()
           setSessions(sessionsData)
+          const toCancel = sessionsData.filter(s => {
+            const dt = getSessionDateTime(s)
+            const isPending = s.status === 'PENDING'
+            return isPending && !!dt && dt.getTime() < Date.now()
+          })
+          if (toCancel.length > 0) {
+            const results = await Promise.all(toCancel.map(s => api.updateSession(s.id, { status: 'CANCELLED' }).then(u => u, () => null)))
+            const updatedMap = new Map(results.filter((u): u is Session => u != null).map(u => [u.id, u]))
+            if (updatedMap.size > 0) setSessions(prev => prev.map(x => updatedMap.get(x.id) ?? x))
+          }
         }
 
         // Load events
@@ -258,13 +295,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }
 
   const updateSession = async (sessionId: string, updates: Partial<Session>) => {
-    try {
-      const updated = await api.updateSession(sessionId, updates)
-      if (updated) {
-        setSessions(prev => prev.map(s => s.id === sessionId ? updated : s))
-      }
-    } catch (error) {
-      console.error('Error updating session:', error)
+    const updated = await api.updateSession(sessionId, updates)
+    if (updated) {
+      setSessions(prev => prev.map(s => s.id === sessionId ? updated : s))
     }
   }
 
@@ -413,7 +446,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (newComment) {
         setJourneys(journeys.map(j =>
           j.id === journeyId
-            ? { ...j, comments: [...(j.comments || []), newComment] }
+            ? { ...j, comments: [...(j.comments || []), newComment as JourneyComment] }
             : j
         ))
       }
@@ -540,7 +573,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const sessionsPerWeek = recentSessions.length / 4
 
     const feedbackResponseRate = mentorSessions.length > 0
-      ? (mentorFeedbacks.length / mentorSessions.filter(s => s.status === 'completed').length) * 100
+      ? (mentorFeedbacks.length / mentorSessions.filter(s => s.status === 'COMPLETED').length) * 100
       : 0
 
     return {
@@ -617,7 +650,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     const mentorSessions = sessions.filter(
       s => s.mentorId === mentorId &&
-        (s.status === 'CONFIRMED' || s.status === 'confirmed' || s.status === 'PENDING' || s.status === 'pending') &&
+        (s.status === 'CONFIRMED' || s.status === 'PENDING') &&
         !s.cancelledAt
     )
     const sessionDateTimes = new Set(
@@ -635,7 +668,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     return menteeIds.map(menteeId => {
       const menteeSessions = mentorSessions.filter(s => s.menteeId === menteeId)
-      const completedSessions = menteeSessions.filter(s => s.status === 'completed')
+      const completedSessions = menteeSessions.filter(s => s.status === 'COMPLETED')
       const menteeFeedbacks = sessionFeedbacks.filter(f => f.menteeId === menteeId && f.mentorId === mentorId)
 
       const averageRating = menteeFeedbacks.length > 0

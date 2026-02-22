@@ -78,7 +78,7 @@ export default function MenteeDashboard({ onSelectSession }: MenteeDashboardProp
   // Get last session date
   const lastSession = useMemo(() => {
     const completedSessions = sessions
-      .filter(s => s.menteeId === currentUser.id && s.status === 'completed')
+      .filter(s => s.menteeId === currentUser.id && s.status === 'COMPLETED')
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     
     if (completedSessions.length === 0) return null
@@ -99,11 +99,21 @@ export default function MenteeDashboard({ onSelectSession }: MenteeDashboardProp
     const userGoals = goals.filter(g => g.userId === currentUser.id)
     return userGoals.some(g => g.id === h.goalId)
   }).length > 0
-  const hasSessions = sessions.filter(s => s.menteeId === currentUser.id).length > 0
+  const menteeSessions = sessions.filter(s => s.menteeId === currentUser.id)
+  const hasSessions = menteeSessions.length > 0
+  // "Meet your mentor" only turns green when mentor accepted AND the session day has passed (mentee "visited")
+  const hasMetMentor = useMemo(() => {
+    return menteeSessions.some(s => {
+      if (s.status !== 'CONFIRMED' && s.status !== 'COMPLETED') return false
+      const dt = getSessionDateTime(s)
+      return dt != null && dt.getTime() < Date.now()
+    })
+  }, [menteeSessions])
+  const hasPendingSession = menteeSessions.some(s => s.status === 'PENDING')
 
   // Get upcoming sessions
   const upcomingSessions = sessions
-    .filter(s => s.menteeId === currentUser.id && (s.status === 'confirmed' || s.status === 'pending'))
+    .filter(s => s.menteeId === currentUser.id && (s.status === 'CONFIRMED' || s.status === 'PENDING'))
     .filter(session => isUpcomingSession(session))
     .sort((a, b) => {
       const dateA = getSessionDateTime(a)?.getTime() ?? 0
@@ -237,9 +247,15 @@ export default function MenteeDashboard({ onSelectSession }: MenteeDashboardProp
             <GettingStartedCard
               icon={<Users className="text-primary-600" size={24} />}
               title="Meet Your Mentor(s)"
-              description="Get to know available mentors."
+              description={
+                hasMetMentor
+                  ? "You've had a session with a mentor."
+                  : hasPendingSession
+                    ? "Session requested – waiting for mentor to accept. Once accepted and the day passes, this step completes."
+                    : "Book a session and have it confirmed; after the session day, this step completes."
+              }
               link="/mentors"
-              completed={hasSessions}
+              completed={hasMetMentor}
             />
           </div>
         </div>
@@ -279,6 +295,11 @@ export default function MenteeDashboard({ onSelectSession }: MenteeDashboardProp
                     </div>
                     <p className="text-gray-700 text-sm">{session.topic || 'Session'}</p>
                     <p className="text-xs text-gray-500 mt-1">{session.time}</p>
+                    {session.status === 'PENDING' && (
+                      <p className="mt-2 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 inline-block">
+                        Waiting for mentor to accept
+                      </p>
+                    )}
                   </button>
                 ))}
                 <Link

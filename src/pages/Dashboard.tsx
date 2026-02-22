@@ -262,6 +262,7 @@ export default function Dashboard() {
                 menteeSummary={selectedMentee}
                 sessions={sessions}
                 feedbacks={sessionFeedbacks}
+                mentorId={user.id}
                 onClose={() => setSelectedMentee(null)}
               />
             </div>
@@ -278,7 +279,7 @@ export default function Dashboard() {
       {/* Completed Sessions with Feedback Prompts - Show below dashboard */}
       {(() => {
         const completedSessions = sessions.filter(s =>
-          s.status === 'completed' &&
+          s.status === 'COMPLETED' &&
           s.menteeId === user.id &&
           (!s.feedbackEligible || s.feedbackEligible === true)
         )

@@ -7,6 +7,7 @@ interface MenteeProfileModalProps {
   menteeSummary: MenteeSummary
   sessions: Session[]
   feedbacks: SessionFeedback[]
+  mentorId: string
   onClose: () => void
 }
 
@@ -14,11 +15,14 @@ export default function MenteeProfileModal({
   menteeSummary,
   sessions,
   feedbacks,
+  mentorId,
   onClose
 }: MenteeProfileModalProps) {
-  const menteeSessions = sessions.filter(s => s.menteeId === menteeSummary.menteeId)
+  const menteeSessions = sessions.filter(
+    s => s.menteeId === menteeSummary.menteeId && s.mentorId === mentorId
+  )
   const upcomingSessions = menteeSessions.filter(s =>
-    (s.status === 'confirmed' || s.status === 'pending') && isUpcomingSession(s)
+    (s.status === 'CONFIRMED' || s.status === 'PENDING') && isUpcomingSession(s)
   )
   const menteeFeedbacks = feedbacks.filter(f => f.menteeId === menteeSummary.menteeId)
 
@@ -134,19 +138,19 @@ export default function MenteeProfileModal({
           </div>
         </div>
 
-        {/* Session History */}
+        {/* Session History (you and this mentee) */}
         <div className="border-t border-gray-200 pt-6">
-          <h4 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+          <h4 className="text-lg font-semibold text-gray-900 mb-2 flex items-center gap-2">
             <Calendar className="text-primary-600" size={20} />
-            Session History
+            Session history with this mentee
           </h4>
+          <p className="text-sm text-gray-500 mb-4">All sessions between you and {menteeSummary.mentee.name}</p>
           {menteeSessions.length === 0 ? (
             <p className="text-gray-500 text-center py-8">No sessions yet</p>
           ) : (
             <div className="space-y-3">
               {menteeSessions
                 .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-                .slice(0, 10)
                 .map(session => {
                   const feedback = menteeFeedbacks.find(f => f.sessionId === session.id)
                   return (
@@ -162,9 +166,10 @@ export default function MenteeProfileModal({
                           </p>
                         </div>
                         <span className={`px-2 py-1 rounded text-xs font-semibold ${
-                          session.status === 'completed' ? 'bg-green-100 text-green-700' :
-                          session.status === 'confirmed' ? 'bg-blue-100 text-blue-700' :
-                          session.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+                          session.status === 'COMPLETED' ? 'bg-green-100 text-green-700' :
+                          session.status === 'CONFIRMED' ? 'bg-blue-100 text-blue-700' :
+                          session.status === 'PENDING' ? 'bg-yellow-100 text-yellow-700' :
+                          session.status === 'CANCELLED' ? 'bg-red-100 text-red-700' :
                           'bg-gray-100 text-gray-700'
                         }`}>
                           {session.status}

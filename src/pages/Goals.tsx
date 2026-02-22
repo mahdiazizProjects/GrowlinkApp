@@ -109,8 +109,6 @@ export default function Goals() {
   }
 
   const handleSaveActionPlan = async (habitsData: Omit<Habit, 'id' | 'createdAt' | 'updatedAt'>[], existingActionPlanId?: string) => {
-    console.log('Goals: handleSaveActionPlan called with', habitsData.length, 'habits', existingActionPlanId ? '(editing)' : '(creating)')
-    
     if (habitsData.length === 0) {
       alert('Please add at least one habit with a title and duration')
       return
@@ -127,8 +125,7 @@ export default function Goals() {
       if (existingActionPlanId) {
         // Update existing action plan
         actionPlanId = existingActionPlanId
-        console.log('Goals: Updating existing action plan', actionPlanId)
-        
+
         // Get existing action items
         const existingItems = await api.listActionItems(actionPlanId)
         const existingItemMap = new Map(existingItems.map((item: { id: string }) => [item.id, item]))
@@ -171,7 +168,6 @@ export default function Goals() {
         // Delete items that were removed (not in keptItemIds)
         const itemsToDelete = Array.from(existingItemIds).filter((id: string) => !keptItemIds.has(id))
         if (itemsToDelete.length > 0) {
-          console.log('Goals: Deleting', itemsToDelete.length, 'removed action items')
           const deletePromises = itemsToDelete.map(itemId => 
             api.deleteActionItem(itemId)
           )
@@ -180,7 +176,6 @@ export default function Goals() {
         
         // If all habits were removed (no habits saved), delete the entire plan
         if (habitsData.length === 0) {
-          console.log('Goals: All habits removed, deleting entire action plan')
           await api.deleteActionPlan(actionPlanId)
           setGoalActionPlans(prev => {
             const updated = { ...prev }
@@ -197,7 +192,6 @@ export default function Goals() {
         // This handles the case where user removes all habits but the check above didn't catch it
         const remainingItems = await api.listActionItems(actionPlanId)
         if (remainingItems.length === 0) {
-          console.log('Goals: Action plan has no items, deleting entire plan')
           await api.deleteActionPlan(actionPlanId)
           setGoalActionPlans(prev => {
             const updated = { ...prev }
@@ -226,7 +220,6 @@ export default function Goals() {
         }
         
         actionPlanId = actionPlan.id
-        console.log('Goals: ActionPlan created', actionPlan)
 
         // Create ActionItems for each habit
         const actionItemPromises = habitsData.map(async (habitData) => {
@@ -290,10 +283,8 @@ export default function Goals() {
 
   const handleDeleteActionPlan = async (goal: Goal) => {
     const actionPlanId = goalActionPlans[goal.id]
-    console.log('handleDeleteActionPlan: Goal', goal.id, 'Action Plan ID', actionPlanId)
-    
+
     if (!actionPlanId) {
-      console.warn('handleDeleteActionPlan: No action plan ID found for goal', goal.id)
       alert('No action plan found to delete')
       return
     }
@@ -303,16 +294,12 @@ export default function Goals() {
     }
 
     try {
-      console.log('handleDeleteActionPlan: Calling deleteActionPlan with ID', actionPlanId)
       const success = await api.deleteActionPlan(actionPlanId)
-      console.log('handleDeleteActionPlan: Delete result', success)
-      
+
       if (success) {
-        // Remove from goal action plans map
         setGoalActionPlans(prev => {
           const updated = { ...prev }
           delete updated[goal.id]
-          console.log('handleDeleteActionPlan: Removed from goalActionPlans map')
           return updated
         })
         
@@ -338,12 +325,9 @@ export default function Goals() {
       // First, delete associated action plan if it exists
       const actionPlanId = goalActionPlans[goal.id]
       if (actionPlanId) {
-        console.log('handleDeleteGoal: Deleting associated action plan', actionPlanId)
         await api.deleteActionPlan(actionPlanId)
       }
 
-      // Then delete the goal
-      console.log('handleDeleteGoal: Deleting goal', goal.id)
       const success = await api.deleteGoal(goal.id)
       
       if (success) {

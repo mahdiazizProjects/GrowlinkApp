@@ -1,11 +1,14 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { Star, MapPin, CheckCircle, Calendar, Users, Award } from 'lucide-react'
+import { format } from 'date-fns'
 import * as api from '../services/api'
+import { useApp } from '../context/AppContext'
 import type { User, Session } from '../types'
 
 export default function MentorProfile() {
   const { id } = useParams()
+  const { currentUser, sessions: contextSessions, sessionFeedbacks } = useApp()
   const [mentor, setMentor] = useState<User | null>(null)
   const [sessions, setSessions] = useState<Session[]>([])
   const [loading, setLoading] = useState(true)
@@ -51,7 +54,15 @@ export default function MentorProfile() {
   // Calculate stats from sessions
   const totalSessions = sessions.length
   const inPersonSessions = sessions.filter(s => s.type === 'in-person').length
-  const completedSessions = sessions.filter(s => s.status === 'completed' || s.status === 'COMPLETED').length
+  const completedSessions = sessions.filter(s => s.status === 'COMPLETED').length
+
+  // Logged-in mentee: sessions with this mentor (from context so we see our own history)
+  const mySessionsWithMentor = id && currentUser
+    ? contextSessions.filter(s => s.mentorId === id && s.menteeId === currentUser.id)
+    : []
+  const mySessionHistory = [...mySessionsWithMentor].sort(
+    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+  )
 
   if (loading) {
     return (
@@ -186,6 +197,52 @@ export default function MentorProfile() {
                 </div>
               </div>
             </div>
+
+            {/* Your session history with this mentor (when logged in as mentee) */}
+            {currentUser && mySessionHistory.length > 0 && (
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <h2 className="text-2xl font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                  <Calendar className="text-primary-600" size={24} />
+                  Your session history with {mentor.name}
+                </h2>
+                <p className="text-sm text-gray-500 mb-4">All sessions between you and this mentor</p>
+                <div className="space-y-3">
+                  {mySessionHistory.map(session => {
+                    const feedback = sessionFeedbacks.find(f => f.sessionId === session.id)
+                    return (
+                      <div
+                        key={session.id}
+                        className="border border-gray-200 rounded-lg p-4 hover:border-primary-300 transition-colors"
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex-1 min-w-0">
+                            <p className="font-semibold text-gray-900">{session.topic || 'Session'}</p>
+                            <p className="text-sm text-gray-600 mt-1">
+                              {format(new Date(session.date), 'MMM d, yyyy')} at {session.time || session.date.slice(11, 16)}
+                            </p>
+                            {feedback && (
+                              <div className="flex items-center gap-2 mt-2">
+                                <Star className="text-yellow-500 fill-yellow-500" size={16} />
+                                <span className="text-sm font-medium text-gray-700">{feedback.rating}/5</span>
+                              </div>
+                            )}
+                          </div>
+                          <span className={`shrink-0 px-2 py-1 rounded text-xs font-semibold ${
+                            session.status === 'COMPLETED' ? 'bg-green-100 text-green-700' :
+                            session.status === 'CONFIRMED' ? 'bg-blue-100 text-blue-700' :
+                            session.status === 'PENDING' ? 'bg-yellow-100 text-yellow-700' :
+                            session.status === 'CANCELLED' ? 'bg-red-100 text-red-700' :
+                            'bg-gray-100 text-gray-700'
+                          }`}>
+                            {session.status}
+                          </span>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Sidebar */}

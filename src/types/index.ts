@@ -65,7 +65,7 @@ export interface Session {
   date: string;
   time: string;
   duration: number; // in minutes
-  status: 'PENDING' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED' | 'pending' | 'confirmed' | 'completed' | 'cancelled';
+  status: 'PENDING' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED';
   price?: number;
   topic?: string;
   rating?: number;

@@ -30,7 +30,7 @@ export default function SessionDetailModal({
     setUpdating(true)
     try {
       await onUpdateSession(session.id, {
-        status: 'cancelled',
+        status: 'CANCELLED',
         cancelledAt: new Date().toISOString(),
         cancelledBy: 'mentor',
         cancellationReason: session.cancellationReason,
@@ -78,14 +78,22 @@ export default function SessionDetailModal({
 
       <div className="p-6 space-y-6">
         {/* Status Badge */}
-        <div className="flex items-center justify-between">
-          <span className={`px-3 py-1 rounded-full text-sm font-semibold ${session.status === 'completed' || session.status === 'COMPLETED' ? 'bg-green-100 text-green-700' :
-              session.status === 'confirmed' || session.status === 'CONFIRMED' ? 'bg-blue-100 text-blue-700' :
-                session.status === 'pending' || session.status === 'PENDING' ? 'bg-yellow-100 text-yellow-700' :
-                  'bg-red-100 text-red-700'
-            }`}>
-            {session.status.charAt(0).toUpperCase() + session.status.slice(1).toLowerCase()}
-          </span>
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <span className={`px-3 py-1 rounded-full text-sm font-semibold ${session.status === 'COMPLETED' ? 'bg-green-100 text-green-700' :
+                session.status === 'CONFIRMED' ? 'bg-blue-100 text-blue-700' :
+                  session.status === 'PENDING' ? 'bg-yellow-100 text-yellow-700' :
+                    'bg-red-100 text-red-700'
+              }`}>
+              {session.status.charAt(0).toUpperCase() + session.status.slice(1).toLowerCase()}
+            </span>
+          </div>
+          {isMentee && session.status === 'PENDING' && (
+            <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+              <AlertCircle className="text-amber-600 shrink-0" size={20} />
+              <p className="text-sm font-medium text-amber-800">Waiting for your mentor to accept this session. You’ll see it as confirmed once they approve.</p>
+            </div>
+          )}
         </div>
 
         {/* Session Info */}
@@ -221,7 +229,7 @@ export default function SessionDetailModal({
         )}
 
         {/* Feedback Section (for mentees on completed sessions) */}
-        {isMentee && (session.status === 'completed' || session.status === 'COMPLETED') && onLeaveFeedback && (
+        {isMentee && session.status === 'COMPLETED' && onLeaveFeedback && (
           <div className="border-t border-gray-200 pt-4">
             <FeedbackPrompt
               session={session}

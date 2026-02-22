@@ -1,265 +1,496 @@
-// API service module
-// Uses in-memory store populated from mock data when no backend is configured.
-// To use server data: put JSON in public/server-data.json or call loadServerData(url).
+// API service module – uses Amplify Data (AppSync) from your backend. No mock data.
 
-import { User, Session, Goal, Habit, Reflection, Journey, Event, ActionPlan, ActionItem, MentorAvailability } from '../types'
-import { mockMentors, mockMentees, mockEvents } from '../data/mockData'
+import { generateClient } from 'aws-amplify/data'
+import type { Schema } from '../../amplify/data/resource'
+import type {
+  User,
+  Session,
+  Goal,
+  Habit,
+  Reflection,
+  Journey,
+  Event,
+  ActionPlan,
+  ActionItem,
+  MentorAvailability
+} from '../types'
 
 export interface CreateUserParams {
-  id?: string;
-  email: string;
-  name: string;
-  username: string;
-  role: 'MENTOR' | 'MENTEE' | 'BOTH' | 'mentor' | 'mentee';
-  [key: string]: any;
+  id?: string
+  email: string
+  name: string
+  username: string
+  role: 'MENTOR' | 'MENTEE' | 'BOTH' | 'mentor' | 'mentee'
+  [key: string]: unknown
 }
 
-// In-memory store (used when no real backend)
-const store = {
-  users: [...mockMentors, ...mockMentees] as User[],
-  sessions: [] as Session[],
-  goals: [] as Goal[],
-  habits: [] as Habit[],
-  reflections: [] as Reflection[],
-  journeys: [] as Journey[],
-  events: [...mockEvents] as Event[],
-  mentorAvailabilities: {} as Record<string, MentorAvailability>
+const client = generateClient<Schema>()
+
+// In-memory only: MentorAvailability and Events are not in the backend schema yet
+const mentorAvailabilityCache: Record<string, MentorAvailability> = {}
+
+function toAppUser(r: Record<string, unknown> | null): User | null {
+  if (!r || !r.id) return null
+  const role = (r.role as string) || 'MENTEE'
+  return {
+    id: r.id as string,
+    username: (r.username as string) || '',
+    email: (r.email as string) || '',
+    name: (r.name as string) || '',
+    title: r.title as string | undefined,
+    role: role as User['role'],
+    avatar: r.avatar as string | undefined,
+    bio: r.bio as string | undefined,
+    location: r.location as string | undefined,
+    skills: r.skills as string[] | undefined,
+    interests: r.interests as string[] | undefined,
+    createdAt: (r.createdAt as string) || new Date().toISOString()
+  }
 }
 
-function attachSessionUsers(s: Session): Session {
-  const mentor = store.users.find(u => u.id === s.mentorId)
-  const mentee = store.users.find(u => u.id === s.menteeId)
-  return { ...s, mentor, mentee }
+function toAppSession(r: Record<string, unknown> | null, mentor?: User | null, mentee?: User | null): Session | null {
+  if (!r || !r.id) return null
+  const dateStr = (r.date as string) || ''
+  const time = dateStr && dateStr.length >= 16 ? dateStr.slice(11, 16) : ''
+  const status = ((r.status as string) ?? 'PENDING').toUpperCase() as Session['status']
+  return {
+    id: r.id as string,
+    mentorId: r.mentorId as string,
+    menteeId: r.menteeId as string,
+    mentor: mentor ?? undefined,
+    mentee: mentee ?? undefined,
+    type: 'virtual',
+    date: dateStr,
+    time,
+    duration: (r.duration as number) ?? 60,
+    status,
+    notes: r.notes as string | undefined,
+    meetingLink: r.meetingLink as string | undefined,
+    ...(r.cancelledAt != null && { cancelledAt: r.cancelledAt as string }),
+    ...(r.cancelledBy != null && { cancelledBy: r.cancelledBy as Session['cancelledBy'] })
+  }
+}
+
+function toAppGoal(r: Record<string, unknown> | null): Goal | null {
+  if (!r || !r.id) return null
+  return {
+    id: r.id as string,
+    userId: r.userId as string,
+    title: r.title as string,
+    description: r.description as string | undefined,
+    category: r.category as string | undefined,
+    progress: r.progress as number | undefined,
+    dueDate: r.dueDate as string | undefined,
+    status: (r.status as Goal['status']) ?? 'active'
+  }
+}
+
+function toAppReflection(r: Record<string, unknown> | null): Reflection | null {
+  if (!r || !r.id) return null
+  return {
+    id: r.id as string,
+    userId: r.userId as string,
+    date: r.date as string,
+    mood: (r.mood as Reflection['mood']) ?? 'NEUTRAL',
+    moodScore: r.moodScore as number | undefined,
+    text: r.text as string | undefined,
+    isShared: !!r.sharedWithMentorId,
+    sharedWithMentorId: r.sharedWithMentorId as string | undefined,
+    mentorFeedback: r.mentorFeedback as string | undefined,
+    createdAt: (r.createdAt as string) || new Date().toISOString(),
+    updatedAt: r.updatedAt as string | undefined
+  }
+}
+
+function toAppJourney(r: Record<string, unknown> | null): Journey | null {
+  if (!r || !r.id) return null
+  const comments = r.comments as Array<Record<string, unknown>> | undefined
+  const mappedComments: Journey['comments'] = comments?.map(c => ({
+    id: c.id as string,
+    userId: c.userId as string,
+    text: (c.text as string) || '',
+    createdAt: (c.createdAt as string) || new Date().toISOString()
+  }))
+  return {
+    id: r.id as string,
+    userId: r.userId as string,
+    goalId: r.goalId as string | undefined,
+    mood: r.mood as Journey['mood'] | undefined,
+    text: (r.text as string) || '',
+    visibility: (r.visibility as Journey['visibility']) ?? 'everyone',
+    selectedMentorIds: r.selectedMentorIds as string[] | undefined,
+    tags: r.tags as string[] | undefined,
+    reactions: r.reactions as Journey['reactions'],
+    comments: mappedComments,
+    createdAt: (r.createdAt as string) || new Date().toISOString(),
+    updatedAt: r.updatedAt as string | undefined
+  }
 }
 
 export async function getUser(userId: string): Promise<User | null> {
-  return store.users.find(u => u.id === userId) ?? null
+  const { data } = await client.models.User.get({ id: userId })
+  return toAppUser(data as Record<string, unknown> | null)
 }
 
 export async function createUser(params: CreateUserParams | Partial<User>): Promise<User> {
   const p = params as Record<string, unknown>
-  const id = (p.id as string) || `user-${Date.now()}`
-  if (store.users.some(u => u.id === id)) {
-    return store.users.find(u => u.id === id)!
-  }
-  const user: User = {
+  const id = (p.id as string) || crypto.randomUUID?.() || `user-${Date.now()}`
+  const role = ((p.role as string) || 'MENTEE').toUpperCase()
+  const validRole = role === 'MENTOR' || role === 'MENTEE' || role === 'BOTH' ? role : 'MENTEE'
+  const { data, errors } = await client.models.User.create({
     id,
+    username: (p.username as string) || (p.email as string)?.toString().split('@')[0] || 'user',
     email: (p.email as string) || '',
     name: (p.name as string) || '',
-    username: (p.username as string) || (p.email as string)?.toString().split('@')[0] || 'user',
-    role: (p.role as User['role']) || 'MENTEE',
-    createdAt: (p.createdAt as string) || new Date().toISOString()
-  }
-  if (p.avatar != null) user.avatar = p.avatar as string
-  if (p.bio != null) user.bio = p.bio as string
-  if (p.location != null) user.location = p.location as string
-  if (p.skills != null) user.skills = p.skills as string[]
-  if (p.interests != null) user.interests = p.interests as string[]
-  store.users.push(user)
-  return user
+    title: p.title as string | undefined,
+    role: validRole as 'MENTOR' | 'MENTEE' | 'BOTH',
+    bio: p.bio as string | undefined,
+    avatar: p.avatar as string | undefined,
+    location: p.location as string | undefined,
+    skills: p.skills as string[] | undefined,
+    interests: p.interests as string[] | undefined
+  })
+  if (errors?.length) throw new Error(errors.map(e => e.message).join(', '))
+  return toAppUser(data as Record<string, unknown>)!
 }
 
 export async function updateUser(userId: string, updates: Partial<User>): Promise<User | null> {
-  const i = store.users.findIndex(u => u.id === userId)
-  if (i === -1) return null
-  store.users[i] = { ...store.users[i], ...updates }
-  return store.users[i]
+  const u = updates as Record<string, unknown>
+  const { data, errors } = await client.models.User.update({
+    id: userId,
+    ...(u.username != null && { username: u.username as string }),
+    ...(u.email != null && { email: u.email as string }),
+    ...(u.name != null && { name: u.name as string }),
+    ...(u.title !== undefined && { title: u.title as string }),
+    ...(u.role != null && { role: (u.role as string).toUpperCase() as 'MENTOR' | 'MENTEE' | 'BOTH' }),
+    ...(u.bio !== undefined && { bio: u.bio as string }),
+    ...(u.avatar !== undefined && { avatar: u.avatar as string }),
+    ...(u.location !== undefined && { location: u.location as string }),
+    ...(u.skills !== undefined && { skills: u.skills as string[] }),
+    ...(u.interests !== undefined && { interests: u.interests as string[] })
+  })
+  if (errors?.length) return null
+  return toAppUser(data as Record<string, unknown>)
 }
 
 export async function listUsers(): Promise<User[]> {
-  return [...store.users]
+  const { data } = await client.models.User.list()
+  return (data || []).map(d => toAppUser(d as Record<string, unknown>)).filter((u): u is User => u != null)
 }
 
 export async function listMentors(): Promise<User[]> {
-  return store.users.filter(u => {
-    const r = (u.role || '').toLowerCase()
+  const all = await listUsers()
+  return all.filter(u => {
+    const r = (u.role || '').toString().toLowerCase()
     return r === 'mentor' || r === 'both'
   })
 }
 
 export async function createSession(session: Session): Promise<Session> {
-  const id = (session as { id?: string }).id || `session-${Date.now()}`
-  const date = typeof session.date === 'string' ? session.date : new Date(session.date).toISOString()
-  const time = (session as { time?: string }).time ?? date.slice(11, 16)
-  const s: Session = {
-    ...session,
-    id,
-    date,
-    time,
-    duration: session.duration ?? 60
-  }
-  store.sessions.push(s)
-  return attachSessionUsers(s)
+  const dateStr = typeof session.date === 'string' ? session.date : new Date(session.date).toISOString()
+  const { data, errors } = await client.models.Session.create({
+    mentorId: session.mentorId,
+    menteeId: session.menteeId,
+    date: dateStr,
+    duration: session.duration ?? 60,
+    status: (session.status?.toUpperCase() as 'PENDING' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED') || 'PENDING',
+    notes: session.notes ?? session.topic ?? undefined,
+    meetingLink: session.meetingLink
+  })
+  if (errors?.length) throw new Error(errors.map(e => e.message).join(', '))
+  const [mentor, mentee] = await Promise.all([getUser(session.mentorId), getUser(session.menteeId)])
+  return toAppSession(data as Record<string, unknown>, mentor, mentee)!
 }
 
 export async function updateSession(sessionId: string, updates: Partial<Session>): Promise<Session | null> {
-  const i = store.sessions.findIndex(s => s.id === sessionId)
-  if (i === -1) return null
-  store.sessions[i] = { ...store.sessions[i], ...updates }
-  return attachSessionUsers(store.sessions[i])
+  const u = updates as Record<string, unknown>
+  const payload: { id: string; status?: string; notes?: string; meetingLink?: string } = { id: sessionId }
+  if (u.status != null) payload.status = (u.status as string).toUpperCase()
+  if (u.notes !== undefined) payload.notes = u.notes as string
+  if (u.meetingLink !== undefined) payload.meetingLink = u.meetingLink as string
+  const statusPayload = payload.status as 'PENDING' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED' | undefined
+  const { data, errors } = await client.models.Session.update({
+    id: sessionId,
+    ...(statusPayload && { status: statusPayload }),
+    ...(payload.notes !== undefined && { notes: payload.notes }),
+    ...(payload.meetingLink !== undefined && { meetingLink: payload.meetingLink })
+  })
+  if (errors?.length) {
+    const msg = errors.map((e: { message?: string }) => e.message || String(e)).join(', ')
+    throw new Error(msg || 'Failed to update session')
+  }
+  const d = data as Record<string, unknown>
+  const [mentor, mentee] = await Promise.all([getUser(d.mentorId as string), getUser(d.menteeId as string)])
+  const session = toAppSession(d, mentor, mentee)
+  if (!session) return null
+  const merged = { ...session, ...updates }
+  if (merged.status) merged.status = (merged.status as string).toUpperCase() as Session['status']
+  return merged
 }
 
 export async function listSessions(): Promise<Session[]> {
-  return store.sessions.map(attachSessionUsers)
+  const { data } = await client.models.Session.list()
+  const users = new Map<string, User>()
+  const load = async (id: string) => { if (!users.has(id)) users.set(id, (await getUser(id))!) }
+  for (const s of data || []) {
+    const r = s as Record<string, unknown>
+    await load(r.mentorId as string)
+    await load(r.menteeId as string)
+  }
+  return (data || []).map(s => toAppSession(
+    s as Record<string, unknown>,
+    users.get((s as Record<string, unknown>).mentorId as string),
+    users.get((s as Record<string, unknown>).menteeId as string)
+  )).filter((x): x is Session => x != null)
 }
 
 export async function listSessionsForUser(userId: string, role: 'mentor' | 'mentee'): Promise<Session[]> {
-  const list = store.sessions.filter(s =>
-    role === 'mentor' ? s.mentorId === userId : s.menteeId === userId
-  )
-  return list.map(attachSessionUsers)
+  const all = await listSessions()
+  return all.filter(s => role === 'mentor' ? s.mentorId === userId : s.menteeId === userId)
 }
 
 export async function getMentorAvailability(mentorId: string): Promise<MentorAvailability | null> {
-  return store.mentorAvailabilities[mentorId] ?? null
+  return mentorAvailabilityCache[mentorId] ?? null
 }
 
 export async function updateMentorAvailability(mentorId: string, availability: MentorAvailability): Promise<MentorAvailability> {
   const updated = { ...availability, mentorId, updatedAt: new Date().toISOString() }
-  store.mentorAvailabilities[mentorId] = updated
+  mentorAvailabilityCache[mentorId] = updated
   return updated
 }
 
 export async function createGoal(goal: Goal): Promise<Goal> {
-  const g = { ...goal, id: goal.id || `goal-${Date.now()}` }
-  store.goals.push(g)
-  return g
+  const { data, errors } = await client.models.Goal.create({
+    userId: goal.userId,
+    title: goal.title,
+    description: goal.description,
+    category: goal.category,
+    progress: goal.progress,
+    dueDate: goal.dueDate
+  })
+  if (errors?.length) throw new Error(errors.map(e => e.message).join(', '))
+  return toAppGoal(data as Record<string, unknown>)!
 }
 
 export async function updateGoal(goalId: string, updates: Partial<Goal>): Promise<Goal | null> {
-  const i = store.goals.findIndex(g => g.id === goalId)
-  if (i === -1) return null
-  store.goals[i] = { ...store.goals[i], ...updates }
-  return store.goals[i]
+  const u = updates as Record<string, unknown>
+  const { data, errors } = await client.models.Goal.update({
+    id: goalId,
+    ...(u.title != null && { title: u.title as string }),
+    ...(u.description !== undefined && { description: u.description as string }),
+    ...(u.category !== undefined && { category: u.category as string }),
+    ...(u.progress !== undefined && { progress: u.progress as number }),
+    ...(u.dueDate !== undefined && { dueDate: u.dueDate as string })
+  })
+  if (errors?.length) return null
+  return toAppGoal(data as Record<string, unknown>)
 }
 
 export async function deleteGoal(goalId: string): Promise<boolean> {
-  const i = store.goals.findIndex(g => g.id === goalId)
-  if (i === -1) return false
-  store.goals.splice(i, 1)
-  return true
+  const { errors } = await client.models.Goal.delete({ id: goalId })
+  return !errors?.length
 }
 
 export async function listGoals(userId: string): Promise<Goal[]> {
-  return store.goals.filter(g => g.userId === userId)
+  const { data } = await client.models.Goal.list({ filter: { userId: { eq: userId } } })
+  return (data || []).map(d => toAppGoal(d as Record<string, unknown>)).filter((g): g is Goal => g != null)
 }
 
 export async function createHabit(habit: Habit): Promise<Habit> {
-  const h = { ...habit, id: habit.id || `habit-${Date.now()}` }
-  store.habits.push(h)
-  return h
+  // Backend has ActionItem, not Habit. Return habit as-is for now; consider mapping to ActionItem later.
+  return { ...habit, id: habit.id || `habit-${Date.now()}` }
 }
 
 export async function updateHabit(habitId: string, updates: Partial<Habit>): Promise<Habit | null> {
-  const i = store.habits.findIndex(h => h.id === habitId)
-  if (i === -1) return null
-  store.habits[i] = { ...store.habits[i], ...updates }
-  return store.habits[i]
+  return { id: habitId, ...updates } as Habit
 }
 
-export async function listHabits(userId: string): Promise<Habit[]> {
-  return store.habits.filter(h => {
-    const goal = store.goals.find(g => g.id === h.goalId)
-    return goal?.userId === userId
-  })
+export async function listHabits(_userId: string): Promise<Habit[]> {
+  return []
 }
 
 export async function createReflection(reflection: Reflection): Promise<Reflection> {
-  const r = { ...reflection, id: reflection.id || `reflection-${Date.now()}` }
-  store.reflections.push(r)
-  return r
+  const { data, errors } = await client.models.Reflection.create({
+    userId: reflection.userId,
+    date: reflection.date,
+    mood: reflection.mood,
+    moodScore: reflection.moodScore,
+    text: reflection.text ?? reflection.content as string ?? '',
+    sharedWithMentorId: reflection.sharedWithMentorId,
+    mentorFeedback: typeof reflection.mentorFeedback === 'string' ? reflection.mentorFeedback : undefined
+  })
+  if (errors?.length) throw new Error(errors.map(e => e.message).join(', '))
+  return toAppReflection(data as Record<string, unknown>)!
 }
 
 export async function listReflections(userId: string): Promise<Reflection[]> {
-  return store.reflections.filter(r => r.userId === userId)
+  const { data } = await client.models.Reflection.list({ filter: { userId: { eq: userId } } })
+  return (data || []).map(d => toAppReflection(d as Record<string, unknown>)).filter((r): r is Reflection => r != null)
 }
 
 export async function createJourney(journey: Journey): Promise<Journey> {
-  const j = { ...journey, id: journey.id || `journey-${Date.now()}` }
-  store.journeys.push(j)
-  return j
+  const { data, errors } = await client.models.Journey.create({
+    userId: journey.userId,
+    goalId: journey.goalId,
+    mood: journey.mood,
+    text: journey.text,
+    visibility: (journey.visibility?.toUpperCase() as 'EVERYONE' | 'MENTORS' | 'PRIVATE' | 'SELECTED') || 'EVERYONE',
+    selectedMentorIds: journey.selectedMentorIds,
+    tags: journey.tags
+  })
+  if (errors?.length) throw new Error(errors.map(e => e.message).join(', '))
+  return toAppJourney(data as Record<string, unknown>)!
 }
 
 export async function getJourney(journeyId: string): Promise<Journey | null> {
-  return store.journeys.find(j => j.id === journeyId) ?? null
+  const { data } = await client.models.Journey.get({ id: journeyId })
+  return toAppJourney(data as Record<string, unknown>)
 }
 
 export async function listJourneys(): Promise<Journey[]> {
-  return [...store.journeys]
+  const { data } = await client.models.Journey.list()
+  return (data || []).map(d => toAppJourney(d as Record<string, unknown>)).filter((j): j is Journey => j != null)
 }
 
-export async function createJourneyReaction(_params: { journeyId: string; userId: string; type: string }): Promise<any> {
-  // In-memory: would need to update store.journeys[].reactions
-  return null;
+export async function createJourneyReaction(params: { journeyId: string; userId: string; type: string }): Promise<unknown> {
+  const type = (params.type?.toUpperCase() || 'HEART') as 'HEART' | 'CELEBRATE' | 'SUPPORT'
+  const { data, errors } = await client.models.JourneyReaction.create({
+    journeyId: params.journeyId,
+    userId: params.userId,
+    type
+  })
+  if (errors?.length) throw new Error(errors.map(e => e.message).join(', '))
+  return data
 }
 
-export async function deleteJourneyReaction(_reactionId: string): Promise<boolean> {
-  return false;
+export async function deleteJourneyReaction(reactionId: string): Promise<boolean> {
+  const { errors } = await client.models.JourneyReaction.delete({ id: reactionId })
+  return !errors?.length
 }
 
-export async function createJourneyComment(_params: { journeyId: string; userId: string; text: string }): Promise<any> {
-  return null;
+export async function createJourneyComment(params: { journeyId: string; userId: string; text: string }): Promise<unknown> {
+  const { data, errors } = await client.models.JourneyComment.create({
+    journeyId: params.journeyId,
+    userId: params.userId,
+    text: params.text
+  })
+  if (errors?.length) throw new Error(errors.map(e => e.message).join(', '))
+  return data
 }
 
 export async function listEvents(): Promise<Event[]> {
-  return [...store.events]
+  return []
 }
 
-/**
- * Load server JSON into the in-memory store.
- * Put your server export in public/server-data.json (see server-data.example.json for shape).
- * Optional: only used when file exists; app works with mock data otherwise.
- */
-export async function loadServerData(url: string): Promise<void> {
-  try {
-    const res = await fetch(url)
-    if (!res.ok) return
-    const data = await res.json()
-    if (Array.isArray(data.users)) store.users = data.users
-    if (Array.isArray(data.sessions)) store.sessions = data.sessions
-    if (Array.isArray(data.goals)) store.goals = data.goals
-    if (Array.isArray(data.reflections)) store.reflections = data.reflections
-    if (Array.isArray(data.journeys)) store.journeys = data.journeys
-    if (Array.isArray(data.events)) store.events = data.events
-    if (data.mentorAvailabilities && typeof data.mentorAvailabilities === 'object') {
-      store.mentorAvailabilities = { ...store.mentorAvailabilities, ...data.mentorAvailabilities }
+export async function loadServerData(_url: string): Promise<void> {
+  // No-op: data comes from Amplify backend only.
+}
+
+export async function createActionPlan(params: Partial<ActionPlan> & { creatorId: string; assigneeId: string; title: string }): Promise<ActionPlan> {
+  const { data, errors } = await client.models.ActionPlan.create({
+    creatorId: params.creatorId,
+    assigneeId: params.assigneeId,
+    title: params.title,
+    description: params.description,
+    startDate: params.startDate,
+    endDate: params.endDate,
+    status: (params.status as ActionPlan['status']) ?? 'ACTIVE'
+  })
+  if (errors?.length) throw new Error(errors.map(e => e.message).join(', '))
+  return { ...params, id: (data as { id: string }).id } as ActionPlan
+}
+
+export async function listActionPlans(creatorId: string, assigneeId: string): Promise<ActionPlan[]> {
+  const { data: byCreator } = await client.models.ActionPlan.list({ filter: { creatorId: { eq: creatorId } } })
+  const { data: byAssignee } = await client.models.ActionPlan.list({ filter: { assigneeId: { eq: assigneeId } } })
+  const seen = new Set<string>()
+  const out: ActionPlan[] = []
+  for (const d of [...(byCreator || []), ...(byAssignee || [])]) {
+    const r = d as Record<string, unknown>
+    if (r.id && !seen.has(r.id as string)) {
+      seen.add(r.id as string)
+      out.push({
+        id: r.id as string,
+        creatorId: r.creatorId as string,
+        assigneeId: r.assigneeId as string,
+        title: r.title as string,
+        description: r.description as string,
+        startDate: r.startDate as string,
+        endDate: r.endDate as string,
+        status: (r.status as string) as ActionPlan['status']
+      })
     }
-  } catch (e) {
-    console.warn('loadServerData failed:', e)
+  }
+  return out
+}
+
+export async function deleteActionPlan(planId: string): Promise<boolean> {
+  const { errors } = await client.models.ActionPlan.delete({ id: planId })
+  return !errors?.length
+}
+
+export async function createActionItem(params: Partial<ActionItem> & { planId: string; title: string }): Promise<ActionItem> {
+  const { data, errors } = await client.models.ActionItem.create({
+    planId: params.planId,
+    title: params.title,
+    description: params.description,
+    type: params.type ?? 'DO',
+    frequency: params.frequency ?? 'DAILY',
+    status: params.status ?? 'ACTIVE'
+  })
+  if (errors?.length) throw new Error(errors.map(e => e.message).join(', '))
+  const r = data as Record<string, unknown>
+  return {
+    id: r.id as string,
+    planId: r.planId as string,
+    title: r.title as string,
+    description: r.description as string,
+    type: (r.type as ActionItem['type']) ?? 'DO',
+    frequency: (r.frequency as ActionItem['frequency']) ?? 'DAILY',
+    status: (r.status as ActionItem['status']) ?? 'ACTIVE'
   }
 }
 
-export async function createActionPlan(params: any): Promise<ActionPlan> {
-  // TODO: Implement actual API call
-  return params;
+export async function updateActionItem(itemId: string, updates: Partial<ActionItem>): Promise<ActionItem | null> {
+  const u = updates as Record<string, unknown>
+  const { data, errors } = await client.models.ActionItem.update({
+    id: itemId,
+    ...(u.title != null && { title: u.title as string }),
+    ...(u.description !== undefined && { description: u.description as string }),
+    ...(u.type !== undefined && { type: u.type as 'DO' | 'AVOID' }),
+    ...(u.frequency !== undefined && { frequency: u.frequency as 'DAILY' | 'WEEKLY' | 'ONE_TIME' }),
+    ...(u.status !== undefined && { status: u.status as 'ACTIVE' | 'PAUSED' | 'COMPLETED' })
+  })
+  if (errors?.length) return null
+  const r = data as Record<string, unknown>
+  return r ? {
+    id: r.id as string,
+    planId: r.planId as string,
+    title: r.title as string,
+    description: r.description as string,
+    type: (r.type as ActionItem['type']) ?? 'DO',
+    frequency: (r.frequency as ActionItem['frequency']) ?? 'DAILY',
+    status: (r.status as ActionItem['status']) ?? 'ACTIVE'
+  } : null
 }
 
-export async function listActionPlans(_creatorId: string, _assigneeId: string): Promise<ActionPlan[]> {
-  // TODO: Implement actual API call
-  return [];
+export async function listActionItems(planId: string): Promise<ActionItem[]> {
+  const { data } = await client.models.ActionItem.list({ filter: { planId: { eq: planId } } })
+  return (data || []).map(d => {
+    const r = d as Record<string, unknown>
+    return {
+      id: r.id as string,
+      planId: r.planId as string,
+      title: r.title as string,
+      description: r.description as string,
+      type: (r.type as ActionItem['type']) ?? 'DO',
+      frequency: (r.frequency as ActionItem['frequency']) ?? 'DAILY',
+      status: (r.status as ActionItem['status']) ?? 'ACTIVE'
+    }
+  })
 }
 
-export async function deleteActionPlan(_planId: string): Promise<boolean> {
-  // TODO: Implement actual API call
-  return false;
-}
-
-export async function createActionItem(params: any): Promise<ActionItem> {
-  // TODO: Implement actual API call
-  return params;
-}
-
-export async function updateActionItem(_itemId: string, _updates: any): Promise<ActionItem | null> {
-  // TODO: Implement actual API call
-  return null;
-}
-
-export async function listActionItems(_planId: string): Promise<ActionItem[]> {
-  // TODO: Implement actual API call
-  return [];
-}
-
-export async function deleteActionItem(_itemId: string): Promise<boolean> {
-  // TODO: Implement actual API call
-  return false;
+export async function deleteActionItem(itemId: string): Promise<boolean> {
+  const { errors } = await client.models.ActionItem.delete({ id: itemId })
+  return !errors?.length
 }

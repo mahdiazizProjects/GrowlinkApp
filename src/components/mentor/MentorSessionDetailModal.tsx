@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { X, Save, Calendar, User, Star, MessageSquare, FileText, AlertCircle } from 'lucide-react'
+import { X, Save, Calendar, User, Star, MessageSquare, FileText, AlertCircle, CheckCircle, XCircle } from 'lucide-react'
 import { Session, SessionFeedback, MentorSessionNotes } from '../../types'
 import { format } from 'date-fns'
 
@@ -32,6 +32,8 @@ export default function MentorSessionDetailModal({
   const [showCancelForm, setShowCancelForm] = useState(false)
   const [cancellationReason, setCancellationReason] = useState('')
   const [cancelling, setCancelling] = useState(false)
+  const [updating, setUpdating] = useState(false)
+  const [updateError, setUpdateError] = useState<string | null>(null)
 
   useEffect(() => {
     if (existingNotes) {
@@ -66,32 +68,58 @@ export default function MentorSessionDetailModal({
   const sessionTime = session.time && session.time.length >= 5 ? session.time.slice(0, 5) : session.date.slice(11, 16)
   const sessionDate = new Date(`${session.date.slice(0, 10)}T${sessionTime || '00:00'}:00`)
   const isWithin24h = sessionDate.getTime() - Date.now() < 24 * 60 * 60 * 1000
-  const canCancel = !session.cancelledAt && (session.status === 'pending' || session.status === 'PENDING' || session.status === 'confirmed' || session.status === 'CONFIRMED')
+  const canCancel = !session.cancelledAt && (session.status === 'PENDING' || session.status === 'CONFIRMED')
+  const isPending = session.status === 'PENDING'
+  const isConfirmed = session.status === 'CONFIRMED'
+  const isCompleted = session.status === 'COMPLETED'
+  const isPast = sessionDate.getTime() < Date.now()
+
+  // Auto-cancel past pending sessions when opening the modal (session list also auto-cancels on load)
+  useEffect(() => {
+    if (!onUpdateSession || !isPending || !isPast) return
+    onUpdateSession(session.id, { status: 'CANCELLED' }).catch(() => {})
+  }, [session.id, isPending, isPast, onUpdateSession])
+
+  const handleUpdateStatus = async (newStatus: 'CONFIRMED' | 'COMPLETED' | 'CANCELLED') => {
+    if (!onUpdateSession) return
+    setUpdateError(null)
+    setUpdating(true)
+    try {
+      const updates: Partial<Session> = { status: newStatus }
+      if (newStatus === 'CANCELLED') {
+        updates.cancelledAt = new Date().toISOString()
+        updates.cancelledBy = 'mentor'
+      }
+      await onUpdateSession(session.id, updates)
+      if (newStatus === 'CANCELLED') onClose()
+    } catch (err) {
+      setUpdateError(err instanceof Error ? err.message : 'Failed to update session. Please try again.')
+    } finally {
+      setUpdating(false)
+    }
+  }
 
   const handleRequestCancel = async () => {
     if (!cancellationReason.trim() || !onUpdateSession) return
     setCancelling(true)
+    setUpdateError(null)
     try {
-      if (isWithin24h) {
-        await onUpdateSession(session.id, {
-          cancellationRequestedAt: new Date().toISOString(),
-          cancellationReason: cancellationReason.trim()
-        })
-        setShowCancelForm(false)
-        setCancellationReason('')
-        // Mentee must accept; they will see the request in their session detail
-      } else {
-        await onUpdateSession(session.id, {
-          status: 'cancelled',
-          cancelledAt: new Date().toISOString(),
-          cancelledBy: 'mentor',
-          cancellationReason: cancellationReason.trim()
-        })
-        setShowCancelForm(false)
-        setCancellationReason('')
-        onClose()
-        // In production: send email to mentee
-      }
+      // Backend only has status + notes; persist cancellation and reason in both cases
+      const reason = cancellationReason.trim()
+      const reasonNote = `[Cancelled by mentor${isWithin24h ? ' (within 24h)' : ''}]: ${reason}`
+      const notes = session.notes ? `${session.notes}\n\n${reasonNote}` : reasonNote
+      await onUpdateSession(session.id, {
+        status: 'CANCELLED',
+        notes,
+        cancelledAt: new Date().toISOString(),
+        cancelledBy: 'mentor',
+        cancellationReason: reason
+      })
+      setShowCancelForm(false)
+      setCancellationReason('')
+      onClose()
+    } catch (err) {
+      setUpdateError(err instanceof Error ? err.message : 'Failed to cancel session. Please try again.')
     } finally {
       setCancelling(false)
     }
@@ -198,18 +226,61 @@ export default function MentorSessionDetailModal({
         )}
 
         {/* Status */}
-        <div>
-          <span className={`px-3 py-1 rounded-full text-sm font-semibold ${session.status === 'completed' ? 'bg-green-100 text-green-700' :
-              session.status === 'confirmed' ? 'bg-blue-100 text-blue-700' :
-                session.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+        <div className="flex items-center gap-3 flex-wrap">
+          <span className={`px-3 py-1 rounded-full text-sm font-semibold ${isCompleted ? 'bg-green-100 text-green-700' :
+              isConfirmed ? 'bg-blue-100 text-blue-700' :
+                isPending ? 'bg-yellow-100 text-yellow-700' :
                   'bg-red-100 text-red-700'
             }`}>
-            {session.status.charAt(0).toUpperCase() + session.status.slice(1)}
+            {session.status}
           </span>
+          {/* Mentor actions: Approve / Reject (when pending and not past), Mark as completed (when confirmed) */}
+          {onUpdateSession && !session.cancelledAt && (
+            <div className="flex items-center gap-2">
+              {isPending && !isPast && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleUpdateStatus('CONFIRMED')}
+                    disabled={updating}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 disabled:opacity-50"
+                  >
+                    <CheckCircle size={18} />
+                    {updating ? 'Updating…' : 'Approve'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleUpdateStatus('CANCELLED')}
+                    disabled={updating}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-300 disabled:opacity-50"
+                  >
+                    <XCircle size={18} />
+                    Reject
+                  </button>
+                </>
+              )}
+              {isConfirmed && !isCompleted && (
+                <button
+                  type="button"
+                  onClick={() => handleUpdateStatus('COMPLETED')}
+                  disabled={updating}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 disabled:opacity-50"
+                >
+                  <CheckCircle size={18} />
+                  {updating ? 'Updating…' : 'Mark as completed'}
+                </button>
+              )}
+            </div>
+          )}
+          {updateError && (
+            <p className="text-sm text-red-600 mt-2" role="alert">
+              {updateError}
+            </p>
+          )}
         </div>
 
         {/* Mentee Feedback Section */}
-        {session.status === 'completed' && feedback && (
+        {session.status === 'COMPLETED' && feedback && (
           <div className="border-t border-gray-200 pt-6">
             <div className="flex items-center gap-2 mb-4">
               <MessageSquare className="text-primary-600" size={20} />
@@ -261,7 +332,7 @@ export default function MentorSessionDetailModal({
           </div>
         )}
 
-        {session.status === 'completed' && !feedback && (
+        {session.status === 'COMPLETED' && !feedback && (
           <div className="border-t border-gray-200 pt-6">
             <div className="bg-yellow-50 border-2 border-yellow-200 rounded-lg p-4">
               <p className="text-sm text-yellow-800">

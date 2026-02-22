@@ -1,5 +1,43 @@
 # Setup Instructions
 
+## Nothing works as expected? Copy `amplify_outputs.json` to your local
+
+**Yes — you should copy the Amplify outputs file to your machine.** The app will not work correctly without it.
+
+- **Where to put it:** In your **project root** (same folder as `package.json`), as a file named **`amplify_outputs.json`**.
+- **Why:** This file is in `.gitignore`, so it is **not in the repo**. Every developer (and your local run) needs a copy. It tells the app:
+  - which **Cognito** user pool to use (sign-in/sign-up),
+  - which **AppSync** API and database to use (users, sessions, goals, etc.).
+- **Where to get it:**
+  1. From whoever deploys the Amplify backend (teammate or CI), or  
+  2. From **Amplify Console** → your app → **Backend** (or Hosting) → download/copy the generated `amplify_outputs.json`, or  
+  3. By running **`npx ampx sandbox --outputs-out-dir .`** from the project root (creates the file locally; requires AWS credentials).
+
+After you put `amplify_outputs.json` in the project root, run `npm run dev` again. Auth and data will use the same backend as the server.
+
+---
+
+## Sessions (or other data) not storing properly?
+
+**Yes — you need to deploy the backend** so that the Session model (and User, Goal, etc.) actually exist in AWS. The app sends sessions to AppSync/DynamoDB; if the backend is not deployed, there is no Session table and nothing is stored.
+
+1. **Deploy the backend** (at least once):
+   - **Option A – Sandbox (good for local dev):**  
+     From project root: **`npx ampx sandbox --outputs-out-dir .`**  
+     This deploys the backend (Auth + Data, including Session) and writes `amplify_outputs.json`. Then run `npm run dev`; sessions will be stored in the cloud.
+   - **Option B – Amplify Console:**  
+     Connect your repo to Amplify and ensure the app has a **backend** build (Amplify Gen 2 backend). When that build runs and succeeds, the Session table exists. Use the `amplify_outputs.json` from that deploy (or from sandbox) in your project root.
+
+2. **Use the right `amplify_outputs.json`**  
+   The file must point to the **same** backend you deployed. If you use a file from another app or an old deploy, the app may talk to the wrong API and sessions won’t show up where you expect.
+
+3. **If sessions still don’t persist:**  
+   - Open DevTools → **Console** and **Network** when you book a session. Look for failed requests (e.g. to the AppSync/graphql endpoint) or errors in the console.  
+   - Confirm you’re signed in; the Session model uses `allow.owner()` so auth may be required.  
+   - Confirm the mentor’s **id** exists in the backend User table (e.g. they signed up or were created via the app).
+
+---
+
 ## If Amplify deployment failed — do this before copying amplify_outputs
 
 1. **Get the backend deployed first**  
@@ -42,7 +80,7 @@ Steps:
 2. Put it in the project root, replacing the existing `amplify_outputs.json`.
 3. Run the app as usual (`npm run dev`). Auth will use the server’s Cognito.
 
-**Note:** The app’s data layer (`src/services/api.ts`) is currently using an **in-memory store** plus mock data, so sessions/goals/journeys etc. are not yet read from the Amplify Data (AppSync) backend. To see data that’s already in the database, `api.ts` would need to be wired to use Amplify Data (e.g. `generateClient` and the generated models). Until then, only Auth uses the server config; list/create/update of sessions, users, goals, etc. stay local.
+**Note:** The app’s data layer (`src/services/api.ts`) uses **Amplify Data** (AppSync) when `amplify_outputs.json` is present. Without the correct file, API calls go nowhere and nothing works as expected.
 
 ---
 

@@ -108,8 +108,6 @@ export default function ActionPlanBuilder({ goal, existingHabits = [], existingA
   }
 
   const handleSave = () => {
-    console.log('ActionPlanBuilder: handleSave called, habits:', habits)
-    
     const validHabits = habits
       .filter(h => h.title && h.duration)
       .map(h => ({
@@ -124,17 +122,14 @@ export default function ActionPlanBuilder({ goal, existingHabits = [], existingA
         // Preserve actionItemId if it exists (for matching existing items)
         ...(h.actionItemId && { actionItemId: h.actionItemId })
       }))
-    
-    console.log('ActionPlanBuilder: validHabits:', validHabits)
-    
+
     // Allow saving with 0 habits - this will delete all items from the plan
     // If it's a new plan with 0 habits, we still need at least one
     if (validHabits.length === 0 && !existingActionPlanId) {
       alert('Please add at least one habit with a title and duration')
       return
     }
-    
-    console.log('ActionPlanBuilder: Calling onSave with', validHabits.length, 'habits')
+
     onSave(validHabits, existingActionPlanId)
     onClose()
   }
