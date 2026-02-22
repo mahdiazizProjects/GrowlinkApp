@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { X, Save, Calendar, User, Star, MessageSquare, FileText, AlertCircle, CheckCircle, XCircle } from 'lucide-react'
 import { Session, SessionFeedback, MentorSessionNotes } from '../../types'
 import { format } from 'date-fns'
@@ -73,10 +73,12 @@ export default function MentorSessionDetailModal({
   const isConfirmed = session.status === 'CONFIRMED'
   const isCompleted = session.status === 'COMPLETED'
   const isPast = sessionDate.getTime() < Date.now()
+  const hasAutoCancelled = useRef(false)
 
   // Auto-cancel past pending sessions when opening the modal (session list also auto-cancels on load)
   useEffect(() => {
-    if (!onUpdateSession || !isPending || !isPast) return
+    if (!onUpdateSession || !isPending || !isPast || hasAutoCancelled.current) return
+    hasAutoCancelled.current = true
     onUpdateSession(session.id, { status: 'CANCELLED' }).catch(() => {})
   }, [session.id, isPending, isPast, onUpdateSession])
 

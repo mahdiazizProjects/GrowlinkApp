@@ -294,12 +294,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  const updateSession = async (sessionId: string, updates: Partial<Session>) => {
+  const updateSession = useCallback(async (sessionId: string, updates: Partial<Session>) => {
     const updated = await api.updateSession(sessionId, updates)
     if (updated) {
       setSessions(prev => prev.map(s => s.id === sessionId ? updated : s))
     }
-  }
+  }, [])
 
   const addEvent = (event: Event) => {
     setEvents([...events, event])
