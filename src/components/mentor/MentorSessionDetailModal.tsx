@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { X, Save, Calendar, User, Star, MessageSquare, FileText, AlertCircle, CheckCircle, XCircle } from 'lucide-react'
 import { Session, SessionFeedback, MentorSessionNotes } from '../../types'
 import { format } from 'date-fns'
+import { getSessionDateTime } from '../../utils/sessionTime'
 
 interface MentorSessionDetailModalProps {
   session: Session
@@ -65,14 +66,15 @@ export default function MentorSessionDetailModal({
     setIsEditing(false)
   }
 
-  const sessionTime = session.time && session.time.length >= 5 ? session.time.slice(0, 5) : session.date.slice(11, 16)
-  const sessionDate = new Date(`${session.date.slice(0, 10)}T${sessionTime || '00:00'}:00`)
-  const isWithin24h = sessionDate.getTime() - Date.now() < 24 * 60 * 60 * 1000
+  const sessionMoment = getSessionDateTime(session)
+  const sessionDate = sessionMoment ?? new Date(session.date)
+  const sessionTime = session.time && session.time.length >= 5 ? session.time.slice(0, 5) : (session.date.length >= 16 ? session.date.slice(11, 16) : '00:00')
+  const isWithin24h = sessionMoment != null && sessionMoment.getTime() - Date.now() < 24 * 60 * 60 * 1000
   const canCancel = !session.cancelledAt && (session.status === 'PENDING' || session.status === 'CONFIRMED')
   const isPending = session.status === 'PENDING'
   const isConfirmed = session.status === 'CONFIRMED'
   const isCompleted = session.status === 'COMPLETED'
-  const isPast = sessionDate.getTime() < Date.now()
+  const isPast = sessionMoment != null && sessionMoment.getTime() < Date.now()
   const hasAutoCancelled = useRef(false)
 
   // Auto-cancel past pending sessions when opening the modal (session list also auto-cancels on load)
@@ -106,20 +108,32 @@ export default function MentorSessionDetailModal({
     setCancelling(true)
     setUpdateError(null)
     try {
-      // Backend only has status + notes; persist cancellation and reason in both cases
       const reason = cancellationReason.trim()
-      const reasonNote = `[Cancelled by mentor${isWithin24h ? ' (within 24h)' : ''}]: ${reason}`
+      const reasonNote = `[Cancelled by mentor${isWithin24h ? ' (within 24h – awaiting mentee response)' : ''}]: ${reason}`
       const notes = session.notes ? `${session.notes}\n\n${reasonNote}` : reasonNote
-      await onUpdateSession(session.id, {
-        status: 'CANCELLED',
-        notes,
-        cancelledAt: new Date().toISOString(),
-        cancelledBy: 'mentor',
-        cancellationReason: reason
-      })
-      setShowCancelForm(false)
-      setCancellationReason('')
-      onClose()
+      if (isWithin24h) {
+        // Within 24h: request cancellation; mentee must accept/reject. State stays CONFIRMED until then.
+        await onUpdateSession(session.id, {
+          status: 'CONFIRMED',
+          notes,
+          cancellationRequestedAt: new Date().toISOString(),
+          cancellationReason: reason
+        })
+        setShowCancelForm(false)
+        setCancellationReason('')
+        onClose()
+      } else {
+        await onUpdateSession(session.id, {
+          status: 'CANCELLED',
+          notes,
+          cancelledAt: new Date().toISOString(),
+          cancelledBy: 'mentor',
+          cancellationReason: reason
+        })
+        setShowCancelForm(false)
+        setCancellationReason('')
+        onClose()
+      }
     } catch (err) {
       setUpdateError(err instanceof Error ? err.message : 'Failed to cancel session. Please try again.')
     } finally {

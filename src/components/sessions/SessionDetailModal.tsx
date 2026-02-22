@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { X, Calendar, Clock, MapPin, Video, DollarSign, AlertCircle } from 'lucide-react'
 import { Session } from '../../types'
 import { format } from 'date-fns'
+import { getSessionDateTime } from '../../utils/sessionTime'
 import FeedbackPrompt from '../feedback/FeedbackPrompt'
 
 interface SessionDetailModalProps {
@@ -21,8 +22,8 @@ export default function SessionDetailModal({
 }: SessionDetailModalProps) {
   const [updating, setUpdating] = useState(false)
   const isMentee = session.menteeId === currentUserId
-  const sessionTime = session.time && session.time.length >= 5 ? session.time.slice(0, 5) : session.date.slice(11, 16)
-  const sessionDate = new Date(`${session.date.slice(0, 10)}T${sessionTime || '00:00'}:00`)
+  const sessionMoment = getSessionDateTime(session)
+  const sessionDate = sessionMoment ?? new Date(session.date)
   const endTime = new Date(sessionDate.getTime() + session.duration * 60000)
 
   const handleAcceptCancellation = async () => {

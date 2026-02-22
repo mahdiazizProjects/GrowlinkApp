@@ -126,7 +126,7 @@ function toAppJourney(
     goalId: r.goalId as string | undefined,
     mood: r.mood as Journey['mood'] | undefined,
     text: (r.text as string) || '',
-    visibility: (r.visibility as Journey['visibility']) ?? 'everyone',
+    visibility: ((r.visibility as string) ?? 'everyone').toLowerCase() as Journey['visibility'],
     selectedMentorIds: r.selectedMentorIds as string[] | undefined,
     tags: r.tags as string[] | undefined,
     reactions: reactions ?? [],
