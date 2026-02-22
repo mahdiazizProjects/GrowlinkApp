@@ -619,7 +619,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     const slots: string[] = []
     const today = new Date()
-    const isToday = dateStr === today.toISOString().split('T')[0]
+    const todayLocal = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+    const isToday = dateStr === todayLocal
 
     for (const range of daySlots) {
       const [startH, startM] = range.startTime.split(':').map(Number)

@@ -48,19 +48,22 @@ function toAppUser(r: Record<string, unknown> | null): User | null {
   }
 }
 
+function toLocalISOString(d: Date): string {
+  const y = d.getFullYear()
+  const mo = String(d.getMonth() + 1).padStart(2, '0')
+  const da = String(d.getDate()).padStart(2, '0')
+  const h = String(d.getHours()).padStart(2, '0')
+  const mi = String(d.getMinutes()).padStart(2, '0')
+  const s = String(d.getSeconds()).padStart(2, '0')
+  return `${y}-${mo}-${da}T${h}:${mi}:${s}`
+}
+
 function toAppSession(r: Record<string, unknown> | null, mentor?: User | null, mentee?: User | null): Session | null {
   if (!r || !r.id) return null
-  const dateStr = (r.date as string) || ''
-  // Use local time for display and calculations (backend stores UTC)
-  const time =
-    dateStr && dateStr.length >= 16
-      ? (() => {
-          const d = new Date(dateStr)
-          const h = d.getHours()
-          const m = d.getMinutes()
-          return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
-        })()
-      : ''
+  const rawDateStr = (r.date as string) || ''
+  const isFullIso = rawDateStr.length >= 16 || rawDateStr.includes('T')
+  const localDateStr = isFullIso ? toLocalISOString(new Date(rawDateStr)) : rawDateStr
+  const time = isFullIso ? localDateStr.slice(11, 16) : ''
   const status = ((r.status as string) ?? 'PENDING').toUpperCase() as Session['status']
   const notes = r.notes as string | undefined
   const meetingLink = r.meetingLink as string | undefined
@@ -71,7 +74,7 @@ function toAppSession(r: Record<string, unknown> | null, mentor?: User | null, m
     mentor: mentor ?? undefined,
     mentee: mentee ?? undefined,
     type: meetingLink ? 'virtual' : 'in-person',
-    date: dateStr,
+    date: localDateStr,
     time,
     duration: (r.duration as number) ?? 60,
     status,

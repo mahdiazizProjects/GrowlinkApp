@@ -107,11 +107,13 @@ export default function BookSession() {
   const handleBookNow = async () => {
     if (!currentUser || !mentor) return
 
-    const today = new Date().toISOString().split('T')[0]
+    const now = new Date()
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
     let bookingDate = today
     let slots = getAvailableSlotsForMentor(mentor.id, bookingDate, 60)
     if (slots.length === 0) {
-      const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0]
+      const tmrw = new Date(Date.now() + 86400000)
+      const tomorrow = `${tmrw.getFullYear()}-${String(tmrw.getMonth() + 1).padStart(2, '0')}-${String(tmrw.getDate()).padStart(2, '0')}`
       bookingDate = tomorrow
       slots = getAvailableSlotsForMentor(mentor.id, bookingDate, 60)
     }
@@ -289,7 +291,7 @@ export default function BookSession() {
                         setTime(timeSlots[0])
                       }
                     }}
-                    min={new Date().toISOString().split('T')[0]}
+                    min={(() => { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`; })()}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                   />
                 </div>

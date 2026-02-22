@@ -68,7 +68,7 @@ export default function MentorSessionDetailModal({
 
   const sessionMoment = getSessionDateTime(session)
   const sessionDate = sessionMoment ?? new Date(session.date)
-  const sessionTime = session.time && session.time.length >= 5 ? session.time.slice(0, 5) : (session.date.length >= 16 ? session.date.slice(11, 16) : '00:00')
+  const sessionTime = session.time || session.date.slice(11, 16) || '00:00'
   const isWithin24h = sessionMoment != null && sessionMoment.getTime() - Date.now() < 24 * 60 * 60 * 1000
   const canCancel = !session.cancelledAt && (session.status === 'PENDING' || session.status === 'CONFIRMED')
   const isPending = session.status === 'PENDING'

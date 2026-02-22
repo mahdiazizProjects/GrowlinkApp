@@ -1,11 +1,10 @@
 import { isValid } from 'date-fns'
 import { Session } from '../types'
 
-/** Single source of truth for session moment. Uses full ISO date when present (one UTC moment); only combines date+time when date is date-only to avoid mixing UTC date with local time. */
+/** Single source of truth for session moment. session.date is stored as local ISO (no Z suffix) by toAppSession. */
 export function getSessionDateTime(session: Session): Date | null {
   if (!session?.date) return null
   const dateStr = session.date
-  // Full ISO string (has time) => single moment in time; use as-is so UTC/local is consistent
   if (dateStr.length >= 16 || dateStr.includes('T')) {
     const d = new Date(dateStr)
     return isValid(d) ? d : null
