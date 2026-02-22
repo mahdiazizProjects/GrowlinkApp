@@ -1,8 +1,22 @@
-import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, type Dispatch, type SetStateAction, type ReactNode } from 'react'
 import { User, Venue, Session, Event, Rating, Goal, Habit, HabitCompletion, Reflection, Journey, JourneyComment, Badge, SessionFeedback, MentorFeedbackStats, MentorSessionNotes, Notification, MentorStats, MenteeSummary, ReactionType, MentorAvailability } from '../types'
 import { fetchUserAttributes, getCurrentUser, signOut } from 'aws-amplify/auth'
 import * as api from '../services/api'
 import { getSessionDateTime } from '../utils/sessionTime'
+
+async function cancelPastPendingSessions(
+  sessionsData: Session[],
+  setSessions: Dispatch<SetStateAction<Session[]>>
+): Promise<void> {
+  const toCancel = sessionsData.filter(s => {
+    const dt = getSessionDateTime(s)
+    return s.status === 'PENDING' && !!dt && dt.getTime() < Date.now()
+  })
+  if (toCancel.length === 0) return
+  const results = await Promise.all(toCancel.map(s => api.updateSession(s.id, { status: 'CANCELLED' }).then(u => u, () => null)))
+  const updatedMap = new Map(results.filter((u): u is Session => u != null).map(u => [u.id, u]))
+  if (updatedMap.size > 0) setSessions(prev => prev.map(x => updatedMap.get(x.id) ?? x))
+}
 
 interface AppContextType {
   currentUser: User | null
@@ -214,31 +228,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
             }))
             return newOnes.length > 0 ? [...newOnes, ...prev] : prev
           })
-          // Auto-cancel past sessions that were never accepted by the mentor
-          const toCancel = sessionsData.filter(s => {
-            const dt = getSessionDateTime(s)
-            const isPending = s.status === 'PENDING'
-            return isPending && !!dt && dt.getTime() < Date.now()
-          })
-          if (toCancel.length > 0) {
-            const results = await Promise.all(toCancel.map(s => api.updateSession(s.id, { status: 'CANCELLED' }).then(u => u, () => null)))
-            const updatedMap = new Map(results.filter((u): u is Session => u != null).map(u => [u.id, u]))
-            if (updatedMap.size > 0) setSessions(prev => prev.map(x => updatedMap.get(x.id) ?? x))
-          }
+          await cancelPastPendingSessions(sessionsData, setSessions)
         } else {
           // Load public data
           const sessionsData = await api.listSessions()
           setSessions(sessionsData)
-          const toCancel = sessionsData.filter(s => {
-            const dt = getSessionDateTime(s)
-            const isPending = s.status === 'PENDING'
-            return isPending && !!dt && dt.getTime() < Date.now()
-          })
-          if (toCancel.length > 0) {
-            const results = await Promise.all(toCancel.map(s => api.updateSession(s.id, { status: 'CANCELLED' }).then(u => u, () => null)))
-            const updatedMap = new Map(results.filter((u): u is Session => u != null).map(u => [u.id, u]))
-            if (updatedMap.size > 0) setSessions(prev => prev.map(x => updatedMap.get(x.id) ?? x))
-          }
+          await cancelPastPendingSessions(sessionsData, setSessions)
         }
 
         // Load events
@@ -653,13 +648,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
         (s.status === 'CONFIRMED' || s.status === 'PENDING') &&
         !s.cancelledAt
     )
-    const sessionDateTimes = new Set(
-      mentorSessions
-        .filter(s => s.date.slice(0, 10) === dateStr)
-        .map(s => s.time && s.time.length >= 5 ? s.time.slice(0, 5) : s.date.slice(11, 16))
-    )
+    // Block every 15-min slot that falls within any existing session's [start, start+duration)
+    const blockedSlots = new Set<string>()
+    mentorSessions
+      .filter(s => s.date.slice(0, 10) === dateStr)
+      .forEach(s => {
+        const startTime = s.time && s.time.length >= 5 ? s.time.slice(0, 5) : s.date.slice(11, 16)
+        const [startH, startM] = startTime.split(':').map(Number)
+        const startMinutes = startH * 60 + startM
+        const dur = s.duration ?? 60
+        const endMinutes = startMinutes + dur
+        for (let m = startMinutes; m < endMinutes; m += 15) {
+          const h = Math.floor(m / 60)
+          const min = m % 60
+          blockedSlots.add(`${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`)
+        }
+      })
 
-    return slots.filter(slot => !sessionDateTimes.has(slot))
+    return slots.filter(slot => !blockedSlots.has(slot))
   }, [getMentorAvailability, sessions])
 
   const getMenteeSummaries = (mentorId: string): MenteeSummary[] => {

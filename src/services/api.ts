@@ -51,21 +51,33 @@ function toAppUser(r: Record<string, unknown> | null): User | null {
 function toAppSession(r: Record<string, unknown> | null, mentor?: User | null, mentee?: User | null): Session | null {
   if (!r || !r.id) return null
   const dateStr = (r.date as string) || ''
-  const time = dateStr && dateStr.length >= 16 ? dateStr.slice(11, 16) : ''
+  // Use local time for display and calculations (backend stores UTC)
+  const time =
+    dateStr && dateStr.length >= 16
+      ? (() => {
+          const d = new Date(dateStr)
+          const h = d.getHours()
+          const m = d.getMinutes()
+          return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+        })()
+      : ''
   const status = ((r.status as string) ?? 'PENDING').toUpperCase() as Session['status']
+  const notes = r.notes as string | undefined
+  const meetingLink = r.meetingLink as string | undefined
   return {
     id: r.id as string,
     mentorId: r.mentorId as string,
     menteeId: r.menteeId as string,
     mentor: mentor ?? undefined,
     mentee: mentee ?? undefined,
-    type: 'virtual',
+    type: meetingLink ? 'virtual' : 'in-person',
     date: dateStr,
     time,
     duration: (r.duration as number) ?? 60,
     status,
-    notes: r.notes as string | undefined,
-    meetingLink: r.meetingLink as string | undefined,
+    notes,
+    topic: notes || undefined,
+    meetingLink,
     ...(r.cancelledAt != null && { cancelledAt: r.cancelledAt as string }),
     ...(r.cancelledBy != null && { cancelledBy: r.cancelledBy as Session['cancelledBy'] })
   }
@@ -102,15 +114,12 @@ function toAppReflection(r: Record<string, unknown> | null): Reflection | null {
   }
 }
 
-function toAppJourney(r: Record<string, unknown> | null): Journey | null {
+function toAppJourney(
+  r: Record<string, unknown> | null,
+  reactions?: Journey['reactions'],
+  comments?: Journey['comments']
+): Journey | null {
   if (!r || !r.id) return null
-  const comments = r.comments as Array<Record<string, unknown>> | undefined
-  const mappedComments: Journey['comments'] = comments?.map(c => ({
-    id: c.id as string,
-    userId: c.userId as string,
-    text: (c.text as string) || '',
-    createdAt: (c.createdAt as string) || new Date().toISOString()
-  }))
   return {
     id: r.id as string,
     userId: r.userId as string,
@@ -120,8 +129,8 @@ function toAppJourney(r: Record<string, unknown> | null): Journey | null {
     visibility: (r.visibility as Journey['visibility']) ?? 'everyone',
     selectedMentorIds: r.selectedMentorIds as string[] | undefined,
     tags: r.tags as string[] | undefined,
-    reactions: r.reactions as Journey['reactions'],
-    comments: mappedComments,
+    reactions: reactions ?? [],
+    comments: comments ?? [],
     createdAt: (r.createdAt as string) || new Date().toISOString(),
     updatedAt: r.updatedAt as string | undefined
   }
@@ -342,14 +351,50 @@ export async function createJourney(journey: Journey): Promise<Journey> {
   return toAppJourney(data as Record<string, unknown>)!
 }
 
+async function listJourneyReactionsByJourneyId(journeyId: string): Promise<Journey['reactions']> {
+  const { data } = await client.models.JourneyReaction.list({ filter: { journeyId: { eq: journeyId } } })
+  return ((data || []).map((d: Record<string, unknown>) => ({
+    id: d.id as string,
+    userId: d.userId as string,
+    type: ((d.type as string)?.toUpperCase() || 'HEART') as 'HEART' | 'CELEBRATE' | 'SUPPORT'
+  })) as Journey['reactions'])
+}
+
+async function listJourneyCommentsByJourneyId(journeyId: string): Promise<Journey['comments']> {
+  const { data } = await client.models.JourneyComment.list({ filter: { journeyId: { eq: journeyId } } })
+  return (data || []).map((d: Record<string, unknown>) => ({
+    id: d.id as string,
+    userId: d.userId as string,
+    text: (d.text as string) || '',
+    createdAt: (d.createdAt as string) || new Date().toISOString()
+  }))
+}
+
 export async function getJourney(journeyId: string): Promise<Journey | null> {
   const { data } = await client.models.Journey.get({ id: journeyId })
-  return toAppJourney(data as Record<string, unknown>)
+  if (!data) return null
+  const [reactions, comments] = await Promise.all([
+    listJourneyReactionsByJourneyId(journeyId),
+    listJourneyCommentsByJourneyId(journeyId)
+  ])
+  return toAppJourney(data as Record<string, unknown>, reactions, comments)
 }
 
 export async function listJourneys(): Promise<Journey[]> {
   const { data } = await client.models.Journey.list()
-  return (data || []).map(d => toAppJourney(d as Record<string, unknown>)).filter((j): j is Journey => j != null)
+  const list = data || []
+  if (list.length === 0) return []
+  const ids = list.map((d: Record<string, unknown>) => d.id as string)
+  const [allReactions, allComments] = await Promise.all([
+    Promise.all(ids.map(id => listJourneyReactionsByJourneyId(id))),
+    Promise.all(ids.map(id => listJourneyCommentsByJourneyId(id)))
+  ])
+  const reactionsByJourney = Object.fromEntries(ids.map((id, i) => [id, allReactions[i]]))
+  const commentsByJourney = Object.fromEntries(ids.map((id, i) => [id, allComments[i]]))
+  return list.map((d: Record<string, unknown>) => {
+    const id = d.id as string
+    return toAppJourney(d, reactionsByJourney[id], commentsByJourney[id])
+  }).filter((j): j is Journey => j != null)
 }
 
 export async function createJourneyReaction(params: { journeyId: string; userId: string; type: string }): Promise<unknown> {
@@ -425,6 +470,10 @@ export async function listActionPlans(creatorId: string, assigneeId: string): Pr
 }
 
 export async function deleteActionPlan(planId: string): Promise<boolean> {
+  const items = await listActionItems(planId)
+  for (const item of items) {
+    await client.models.ActionItem.delete({ id: item.id })
+  }
   const { errors } = await client.models.ActionPlan.delete({ id: planId })
   return !errors?.length
 }
