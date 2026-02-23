@@ -56,7 +56,7 @@ export default function MentorAvailabilityEditor({
 
   useEffect(() => {
     setSlots(initialAvailability.slots)
-  }, [initialAvailability.mentorId, initialAvailability.slots.length])
+  }, [initialAvailability.mentorId, JSON.stringify(initialAvailability.slots)])
 
   const applyPreset = (presetSlots: MentorAvailabilitySlot[]) => {
     setSlots(presetSlots.map(s => ({ ...s })))

@@ -21,6 +21,7 @@ export default function SessionDetailModal({
   currentUserId
 }: SessionDetailModalProps) {
   const [updating, setUpdating] = useState(false)
+  const [updateError, setUpdateError] = useState<string | null>(null)
   const isMentee = session.menteeId === currentUserId
   const sessionMoment = getSessionDateTime(session)
   const sessionDate = sessionMoment ?? new Date(session.date)
@@ -29,6 +30,7 @@ export default function SessionDetailModal({
   const handleAcceptCancellation = async () => {
     if (!onUpdateSession) return
     setUpdating(true)
+    setUpdateError(null)
     try {
       await onUpdateSession(session.id, {
         status: 'CANCELLED',
@@ -39,6 +41,8 @@ export default function SessionDetailModal({
         cancellationRequestedAt: undefined
       })
       onClose()
+    } catch (err) {
+      setUpdateError(err instanceof Error ? err.message : 'Failed to accept cancellation. Please try again.')
     } finally {
       setUpdating(false)
     }
@@ -47,6 +51,7 @@ export default function SessionDetailModal({
   const handleRejectCancellation = async () => {
     if (!onUpdateSession) return
     setUpdating(true)
+    setUpdateError(null)
     try {
       await onUpdateSession(session.id, {
         menteeAcceptedCancellation: false,
@@ -54,6 +59,8 @@ export default function SessionDetailModal({
         cancellationReason: undefined
       })
       onClose()
+    } catch (err) {
+      setUpdateError(err instanceof Error ? err.message : 'Failed to reject cancellation. Please try again.')
     } finally {
       setUpdating(false)
     }
@@ -153,6 +160,9 @@ export default function SessionDetailModal({
             </div>
             <p className="text-sm text-amber-700">Reason: {session.cancellationReason}</p>
             <p className="text-xs text-amber-600">If you accept, the session will be cancelled. If you reject, the session stays and the mentor may be penalised for last-minute cancellation requests.</p>
+            {updateError && (
+              <p className="text-sm text-red-600">{updateError}</p>
+            )}
             <div className="flex gap-2">
               <button
                 type="button"

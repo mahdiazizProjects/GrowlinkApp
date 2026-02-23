@@ -580,8 +580,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const recentSessions = mentorSessions.filter(s => new Date(s.date) >= fourWeeksAgo)
     const sessionsPerWeek = recentSessions.length / 4
 
-    const feedbackResponseRate = mentorSessions.length > 0
-      ? (mentorFeedbacks.length / mentorSessions.filter(s => s.status === 'COMPLETED').length) * 100
+    const completedCount = mentorSessions.filter(s => s.status === 'COMPLETED').length
+    const feedbackResponseRate = completedCount > 0
+      ? (mentorFeedbacks.length / completedCount) * 100
       : 0
 
     return {
