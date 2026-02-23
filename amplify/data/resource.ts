@@ -143,6 +143,12 @@ const schema = a.schema({
     userId: a.id().required(),
     text: a.string().required(),
   }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
+
+  MentorAvailability: a.model({
+    mentorId: a.id().required(),
+    slots: a.string().required(),
+    timezone: a.string(),
+  }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
 });
 
 export type Schema = ClientSchema<typeof schema>;

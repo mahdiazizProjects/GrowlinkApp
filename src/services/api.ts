@@ -26,7 +26,6 @@ export interface CreateUserParams {
 
 const client = generateClient<Schema>()
 
-// In-memory only: MentorAvailability and Events are not in the backend schema yet
 const mentorAvailabilityCache: Record<string, MentorAvailability> = {}
 
 function toAppUser(r: Record<string, unknown> | null): User | null {
@@ -257,16 +256,55 @@ export async function listSessions(): Promise<Session[]> {
 }
 
 export async function listSessionsForUser(userId: string, role: 'mentor' | 'mentee'): Promise<Session[]> {
-  const all = await listSessions()
-  return all.filter(s => role === 'mentor' ? s.mentorId === userId : s.menteeId === userId)
+  const filterField = role === 'mentor' ? 'mentorId' : 'menteeId'
+  const { data } = await client.models.Session.list({ filter: { [filterField]: { eq: userId } } })
+  const users = new Map<string, User>()
+  const load = async (id: string) => { if (!users.has(id)) users.set(id, (await getUser(id))!) }
+  for (const s of data || []) {
+    const r = s as Record<string, unknown>
+    await load(r.mentorId as string)
+    await load(r.menteeId as string)
+  }
+  return (data || []).map(s => toAppSession(
+    s as Record<string, unknown>,
+    users.get((s as Record<string, unknown>).mentorId as string),
+    users.get((s as Record<string, unknown>).menteeId as string)
+  )).filter((x): x is Session => x != null)
 }
 
 export async function getMentorAvailability(mentorId: string): Promise<MentorAvailability | null> {
-  return mentorAvailabilityCache[mentorId] ?? null
+  if (mentorAvailabilityCache[mentorId]) return mentorAvailabilityCache[mentorId]
+  const { data } = await client.models.MentorAvailability.list({ filter: { mentorId: { eq: mentorId } } })
+  const record = (data || [])[0] as Record<string, unknown> | undefined
+  if (!record) return null
+  const parsed: MentorAvailability = {
+    mentorId: record.mentorId as string,
+    slots: JSON.parse((record.slots as string) || '[]'),
+    timezone: record.timezone as string | undefined,
+    updatedAt: record.updatedAt as string | undefined
+  }
+  mentorAvailabilityCache[mentorId] = parsed
+  return parsed
 }
 
 export async function updateMentorAvailability(mentorId: string, availability: MentorAvailability): Promise<MentorAvailability> {
   const updated = { ...availability, mentorId, updatedAt: new Date().toISOString() }
+  const slotsJson = JSON.stringify(updated.slots)
+  const { data: existing } = await client.models.MentorAvailability.list({ filter: { mentorId: { eq: mentorId } } })
+  const existingRecord = (existing || [])[0] as Record<string, unknown> | undefined
+  if (existingRecord?.id) {
+    await client.models.MentorAvailability.update({
+      id: existingRecord.id as string,
+      slots: slotsJson,
+      timezone: updated.timezone
+    })
+  } else {
+    await client.models.MentorAvailability.create({
+      mentorId,
+      slots: slotsJson,
+      timezone: updated.timezone
+    })
+  }
   mentorAvailabilityCache[mentorId] = updated
   return updated
 }
