@@ -680,7 +680,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
       })
 
-    return slots.filter(slot => !blockedSlots.has(slot))
+    return slots.filter(slot => {
+      const [slotH, slotM] = slot.split(':').map(Number)
+      const slotStartMinutes = slotH * 60 + slotM
+      for (let m = slotStartMinutes; m < slotStartMinutes + durationMinutes; m += 15) {
+        const h = Math.floor(m / 60)
+        const min = m % 60
+        const intervalKey = `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`
+        if (blockedSlots.has(intervalKey)) return false
+      }
+      return true
+    })
   }, [getMentorAvailability, sessions])
 
   const getMenteeSummaries = (mentorId: string): MenteeSummary[] => {
