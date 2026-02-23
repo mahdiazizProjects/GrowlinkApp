@@ -24,7 +24,11 @@ export interface CreateUserParams {
   [key: string]: unknown
 }
 
-const client = generateClient<Schema>()
+let _client: ReturnType<typeof generateClient<Schema>> | null = null
+function getClient() {
+  if (!_client) _client = generateClient<Schema>()
+  return _client
+}
 
 const mentorAvailabilityCache: Record<string, MentorAvailability> = {}
 
@@ -139,7 +143,7 @@ function toAppJourney(
 }
 
 export async function getUser(userId: string): Promise<User | null> {
-  const { data } = await client.models.User.get({ id: userId })
+  const { data } = await getClient().models.User.get({ id: userId })
   return toAppUser(data as Record<string, unknown> | null)
 }
 
@@ -148,7 +152,7 @@ export async function createUser(params: CreateUserParams | Partial<User>): Prom
   const id = (p.id as string) || crypto.randomUUID?.() || `user-${Date.now()}`
   const role = ((p.role as string) || 'MENTEE').toUpperCase()
   const validRole = role === 'MENTOR' || role === 'MENTEE' || role === 'BOTH' ? role : 'MENTEE'
-  const { data, errors } = await client.models.User.create({
+  const { data, errors } = await getClient().models.User.create({
     id,
     username: (p.username as string) || (p.email as string)?.toString().split('@')[0] || 'user',
     email: (p.email as string) || '',
@@ -167,7 +171,7 @@ export async function createUser(params: CreateUserParams | Partial<User>): Prom
 
 export async function updateUser(userId: string, updates: Partial<User>): Promise<User | null> {
   const u = updates as Record<string, unknown>
-  const { data, errors } = await client.models.User.update({
+  const { data, errors } = await getClient().models.User.update({
     id: userId,
     ...(u.username != null && { username: u.username as string }),
     ...(u.email != null && { email: u.email as string }),
@@ -185,7 +189,7 @@ export async function updateUser(userId: string, updates: Partial<User>): Promis
 }
 
 export async function listUsers(): Promise<User[]> {
-  const { data } = await client.models.User.list()
+  const { data } = await getClient().models.User.list()
   return (data || []).map(d => toAppUser(d as Record<string, unknown>)).filter((u): u is User => u != null)
 }
 
@@ -199,7 +203,7 @@ export async function listMentors(): Promise<User[]> {
 
 export async function createSession(session: Session): Promise<Session> {
   const dateStr = typeof session.date === 'string' ? session.date : new Date(session.date).toISOString()
-  const { data, errors } = await client.models.Session.create({
+  const { data, errors } = await getClient().models.Session.create({
     mentorId: session.mentorId,
     menteeId: session.menteeId,
     date: dateStr,
@@ -220,7 +224,7 @@ export async function updateSession(sessionId: string, updates: Partial<Session>
   if (u.notes !== undefined) payload.notes = u.notes as string
   if (u.meetingLink !== undefined) payload.meetingLink = u.meetingLink as string
   const statusPayload = payload.status as 'PENDING' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED' | undefined
-  const { data, errors } = await client.models.Session.update({
+  const { data, errors } = await getClient().models.Session.update({
     id: sessionId,
     ...(statusPayload && { status: statusPayload }),
     ...(payload.notes !== undefined && { notes: payload.notes }),
@@ -240,7 +244,7 @@ export async function updateSession(sessionId: string, updates: Partial<Session>
 }
 
 export async function listSessions(): Promise<Session[]> {
-  const { data } = await client.models.Session.list()
+  const { data } = await getClient().models.Session.list()
   const users = new Map<string, User>()
   const load = async (id: string) => { if (!users.has(id)) users.set(id, (await getUser(id))!) }
   for (const s of data || []) {
@@ -257,7 +261,7 @@ export async function listSessions(): Promise<Session[]> {
 
 export async function listSessionsForUser(userId: string, role: 'mentor' | 'mentee'): Promise<Session[]> {
   const filterField = role === 'mentor' ? 'mentorId' : 'menteeId'
-  const { data } = await client.models.Session.list({ filter: { [filterField]: { eq: userId } } })
+  const { data } = await getClient().models.Session.list({ filter: { [filterField]: { eq: userId } } })
   const users = new Map<string, User>()
   const load = async (id: string) => { if (!users.has(id)) users.set(id, (await getUser(id))!) }
   for (const s of data || []) {
@@ -274,7 +278,7 @@ export async function listSessionsForUser(userId: string, role: 'mentor' | 'ment
 
 export async function getMentorAvailability(mentorId: string): Promise<MentorAvailability | null> {
   if (mentorAvailabilityCache[mentorId]) return mentorAvailabilityCache[mentorId]
-  const { data } = await client.models.MentorAvailability.list({ filter: { mentorId: { eq: mentorId } } })
+  const { data } = await getClient().models.MentorAvailability.list({ filter: { mentorId: { eq: mentorId } } })
   const record = (data || [])[0] as Record<string, unknown> | undefined
   if (!record) return null
   const parsed: MentorAvailability = {
@@ -290,16 +294,16 @@ export async function getMentorAvailability(mentorId: string): Promise<MentorAva
 export async function updateMentorAvailability(mentorId: string, availability: MentorAvailability): Promise<MentorAvailability> {
   const updated = { ...availability, mentorId, updatedAt: new Date().toISOString() }
   const slotsJson = JSON.stringify(updated.slots)
-  const { data: existing } = await client.models.MentorAvailability.list({ filter: { mentorId: { eq: mentorId } } })
+  const { data: existing } = await getClient().models.MentorAvailability.list({ filter: { mentorId: { eq: mentorId } } })
   const existingRecord = (existing || [])[0] as Record<string, unknown> | undefined
   if (existingRecord?.id) {
-    await client.models.MentorAvailability.update({
+    await getClient().models.MentorAvailability.update({
       id: existingRecord.id as string,
       slots: slotsJson,
       timezone: updated.timezone
     })
   } else {
-    await client.models.MentorAvailability.create({
+    await getClient().models.MentorAvailability.create({
       mentorId,
       slots: slotsJson,
       timezone: updated.timezone
@@ -310,7 +314,7 @@ export async function updateMentorAvailability(mentorId: string, availability: M
 }
 
 export async function createGoal(goal: Goal): Promise<Goal> {
-  const { data, errors } = await client.models.Goal.create({
+  const { data, errors } = await getClient().models.Goal.create({
     userId: goal.userId,
     title: goal.title,
     description: goal.description,
@@ -324,7 +328,7 @@ export async function createGoal(goal: Goal): Promise<Goal> {
 
 export async function updateGoal(goalId: string, updates: Partial<Goal>): Promise<Goal | null> {
   const u = updates as Record<string, unknown>
-  const { data, errors } = await client.models.Goal.update({
+  const { data, errors } = await getClient().models.Goal.update({
     id: goalId,
     ...(u.title != null && { title: u.title as string }),
     ...(u.description !== undefined && { description: u.description as string }),
@@ -337,12 +341,12 @@ export async function updateGoal(goalId: string, updates: Partial<Goal>): Promis
 }
 
 export async function deleteGoal(goalId: string): Promise<boolean> {
-  const { errors } = await client.models.Goal.delete({ id: goalId })
+  const { errors } = await getClient().models.Goal.delete({ id: goalId })
   return !errors?.length
 }
 
 export async function listGoals(userId: string): Promise<Goal[]> {
-  const { data } = await client.models.Goal.list({ filter: { userId: { eq: userId } } })
+  const { data } = await getClient().models.Goal.list({ filter: { userId: { eq: userId } } })
   return (data || []).map(d => toAppGoal(d as Record<string, unknown>)).filter((g): g is Goal => g != null)
 }
 
@@ -360,7 +364,7 @@ export async function listHabits(_userId: string): Promise<Habit[]> {
 }
 
 export async function createReflection(reflection: Reflection): Promise<Reflection> {
-  const { data, errors } = await client.models.Reflection.create({
+  const { data, errors } = await getClient().models.Reflection.create({
     userId: reflection.userId,
     date: reflection.date,
     mood: reflection.mood,
@@ -374,12 +378,12 @@ export async function createReflection(reflection: Reflection): Promise<Reflecti
 }
 
 export async function listReflections(userId: string): Promise<Reflection[]> {
-  const { data } = await client.models.Reflection.list({ filter: { userId: { eq: userId } } })
+  const { data } = await getClient().models.Reflection.list({ filter: { userId: { eq: userId } } })
   return (data || []).map(d => toAppReflection(d as Record<string, unknown>)).filter((r): r is Reflection => r != null)
 }
 
 export async function createJourney(journey: Journey): Promise<Journey> {
-  const { data, errors } = await client.models.Journey.create({
+  const { data, errors } = await getClient().models.Journey.create({
     userId: journey.userId,
     goalId: journey.goalId,
     mood: journey.mood,
@@ -393,7 +397,7 @@ export async function createJourney(journey: Journey): Promise<Journey> {
 }
 
 async function listJourneyReactionsByJourneyId(journeyId: string): Promise<Journey['reactions']> {
-  const { data } = await client.models.JourneyReaction.list({ filter: { journeyId: { eq: journeyId } } })
+  const { data } = await getClient().models.JourneyReaction.list({ filter: { journeyId: { eq: journeyId } } })
   return ((data || []).map((d: Record<string, unknown>) => ({
     id: d.id as string,
     userId: d.userId as string,
@@ -402,7 +406,7 @@ async function listJourneyReactionsByJourneyId(journeyId: string): Promise<Journ
 }
 
 async function listJourneyCommentsByJourneyId(journeyId: string): Promise<Journey['comments']> {
-  const { data } = await client.models.JourneyComment.list({ filter: { journeyId: { eq: journeyId } } })
+  const { data } = await getClient().models.JourneyComment.list({ filter: { journeyId: { eq: journeyId } } })
   return (data || []).map((d: Record<string, unknown>) => ({
     id: d.id as string,
     userId: d.userId as string,
@@ -412,7 +416,7 @@ async function listJourneyCommentsByJourneyId(journeyId: string): Promise<Journe
 }
 
 export async function getJourney(journeyId: string): Promise<Journey | null> {
-  const { data } = await client.models.Journey.get({ id: journeyId })
+  const { data } = await getClient().models.Journey.get({ id: journeyId })
   if (!data) return null
   const [reactions, comments] = await Promise.all([
     listJourneyReactionsByJourneyId(journeyId),
@@ -422,7 +426,7 @@ export async function getJourney(journeyId: string): Promise<Journey | null> {
 }
 
 export async function listJourneys(): Promise<Journey[]> {
-  const { data } = await client.models.Journey.list()
+  const { data } = await getClient().models.Journey.list()
   const list = data || []
   if (list.length === 0) return []
   const ids = list.map((d: Record<string, unknown>) => d.id as string)
@@ -440,7 +444,7 @@ export async function listJourneys(): Promise<Journey[]> {
 
 export async function createJourneyReaction(params: { journeyId: string; userId: string; type: string }): Promise<unknown> {
   const type = (params.type?.toUpperCase() || 'HEART') as 'HEART' | 'CELEBRATE' | 'SUPPORT'
-  const { data, errors } = await client.models.JourneyReaction.create({
+  const { data, errors } = await getClient().models.JourneyReaction.create({
     journeyId: params.journeyId,
     userId: params.userId,
     type
@@ -450,12 +454,12 @@ export async function createJourneyReaction(params: { journeyId: string; userId:
 }
 
 export async function deleteJourneyReaction(reactionId: string): Promise<boolean> {
-  const { errors } = await client.models.JourneyReaction.delete({ id: reactionId })
+  const { errors } = await getClient().models.JourneyReaction.delete({ id: reactionId })
   return !errors?.length
 }
 
 export async function createJourneyComment(params: { journeyId: string; userId: string; text: string }): Promise<unknown> {
-  const { data, errors } = await client.models.JourneyComment.create({
+  const { data, errors } = await getClient().models.JourneyComment.create({
     journeyId: params.journeyId,
     userId: params.userId,
     text: params.text
@@ -473,7 +477,7 @@ export async function loadServerData(_url: string): Promise<void> {
 }
 
 export async function createActionPlan(params: Partial<ActionPlan> & { creatorId: string; assigneeId: string; title: string }): Promise<ActionPlan> {
-  const { data, errors } = await client.models.ActionPlan.create({
+  const { data, errors } = await getClient().models.ActionPlan.create({
     creatorId: params.creatorId,
     assigneeId: params.assigneeId,
     title: params.title,
@@ -487,8 +491,8 @@ export async function createActionPlan(params: Partial<ActionPlan> & { creatorId
 }
 
 export async function listActionPlans(creatorId: string, assigneeId: string): Promise<ActionPlan[]> {
-  const { data: byCreator } = await client.models.ActionPlan.list({ filter: { creatorId: { eq: creatorId } } })
-  const { data: byAssignee } = await client.models.ActionPlan.list({ filter: { assigneeId: { eq: assigneeId } } })
+  const { data: byCreator } = await getClient().models.ActionPlan.list({ filter: { creatorId: { eq: creatorId } } })
+  const { data: byAssignee } = await getClient().models.ActionPlan.list({ filter: { assigneeId: { eq: assigneeId } } })
   const seen = new Set<string>()
   const out: ActionPlan[] = []
   for (const d of [...(byCreator || []), ...(byAssignee || [])]) {
@@ -513,14 +517,14 @@ export async function listActionPlans(creatorId: string, assigneeId: string): Pr
 export async function deleteActionPlan(planId: string): Promise<boolean> {
   const items = await listActionItems(planId)
   for (const item of items) {
-    await client.models.ActionItem.delete({ id: item.id })
+    await getClient().models.ActionItem.delete({ id: item.id })
   }
-  const { errors } = await client.models.ActionPlan.delete({ id: planId })
+  const { errors } = await getClient().models.ActionPlan.delete({ id: planId })
   return !errors?.length
 }
 
 export async function createActionItem(params: Partial<ActionItem> & { planId: string; title: string }): Promise<ActionItem> {
-  const { data, errors } = await client.models.ActionItem.create({
+  const { data, errors } = await getClient().models.ActionItem.create({
     planId: params.planId,
     title: params.title,
     description: params.description,
@@ -543,7 +547,7 @@ export async function createActionItem(params: Partial<ActionItem> & { planId: s
 
 export async function updateActionItem(itemId: string, updates: Partial<ActionItem>): Promise<ActionItem | null> {
   const u = updates as Record<string, unknown>
-  const { data, errors } = await client.models.ActionItem.update({
+  const { data, errors } = await getClient().models.ActionItem.update({
     id: itemId,
     ...(u.title != null && { title: u.title as string }),
     ...(u.description !== undefined && { description: u.description as string }),
@@ -565,7 +569,7 @@ export async function updateActionItem(itemId: string, updates: Partial<ActionIt
 }
 
 export async function listActionItems(planId: string): Promise<ActionItem[]> {
-  const { data } = await client.models.ActionItem.list({ filter: { planId: { eq: planId } } })
+  const { data } = await getClient().models.ActionItem.list({ filter: { planId: { eq: planId } } })
   return (data || []).map(d => {
     const r = d as Record<string, unknown>
     return {
@@ -581,6 +585,6 @@ export async function listActionItems(planId: string): Promise<ActionItem[]> {
 }
 
 export async function deleteActionItem(itemId: string): Promise<boolean> {
-  const { errors } = await client.models.ActionItem.delete({ id: itemId })
+  const { errors } = await getClient().models.ActionItem.delete({ id: itemId })
   return !errors?.length
 }
