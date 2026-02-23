@@ -210,6 +210,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
           setHabits(habitsData)
           setReflections(reflectionsData)
           setJourneys(journeysData)
+
+          const mentorIds = new Set<string>()
+          if (currentUser.role === 'MENTOR' || currentUser.role === 'BOTH' || currentUser.role === 'mentor') {
+            mentorIds.add(currentUser.id)
+          }
+          sessionsData.forEach(s => mentorIds.add(s.mentorId))
+          const availabilities = await Promise.all(
+            Array.from(mentorIds).map(id => api.getMentorAvailability(id))
+          )
+          const avMap: Record<string, MentorAvailability> = {}
+          availabilities.forEach(a => { if (a) avMap[a.mentorId] = a })
+          setMentorAvailabilities(avMap)
+
           // Show notifications for pending session requests (notifications are in-memory; mentor sees these when they load)
           setNotifications(prev => {
             const existingRelated = new Set(prev.map(n => n.relatedId).filter(Boolean))
