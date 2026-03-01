@@ -42,7 +42,9 @@ export default function MentorCard({ mentor }: MentorCardProps) {
           </div>
           <div className="flex-1 min-w-0">
             <h3 className="font-bold text-gray-900 truncate">{mentor.name}</h3>
-            <p className="text-sm text-gray-600 truncate">{mentor.title || 'Mentor'}</p>
+            <p className="text-sm text-gray-600 truncate">
+              {mentor.title && mentor.title.toLowerCase() !== 'mentee' ? mentor.title : 'Mentor'}
+            </p>
           </div>
         </div>
 

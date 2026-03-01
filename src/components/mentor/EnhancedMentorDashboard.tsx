@@ -35,7 +35,7 @@ export default function EnhancedMentorDashboard({
 
   const stats = useMemo(() => {
     const upcomingSessions = mentorSessions.filter(s =>
-      (s.status === 'confirmed' || s.status === 'pending') && isUpcomingSession(s)
+      (s.status === 'CONFIRMED' || s.status === 'PENDING') && isUpcomingSession(s)
     )
 
     // Today's sessions should be upcoming sessions (pending/confirmed) that are scheduled for today
@@ -257,8 +257,10 @@ function SessionCard({ session, onClick }: { session: Session; onClick: () => vo
         </span>
       </div>
       <p className="text-sm text-gray-700 mb-2">{session.topic}</p>
-      <span className={`inline-block px-2 py-1 rounded text-xs font-semibold ${session.status === 'confirmed' ? 'bg-blue-100 text-blue-700' :
-        session.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
+      <span className={`inline-block px-2 py-1 rounded text-xs font-semibold ${session.status === 'COMPLETED' ? 'bg-green-100 text-green-700' :
+        session.status === 'CONFIRMED' ? 'bg-blue-100 text-blue-700' :
+        session.status === 'PENDING' ? 'bg-yellow-100 text-yellow-700' :
+        session.status === 'CANCELLED' ? 'bg-red-100 text-red-700' :
           'bg-gray-100 text-gray-700'
         }`}>
         {session.status}

@@ -23,10 +23,10 @@ export default function ReflectionJournal({ reflections, goals, onSubmit, curren
 
     onSubmit({
       userId: currentUserId,
-      
       date: currentDate,
       text: text.trim(),
       mood: 'NEUTRAL',
+      isShared: false,
     })
 
     // Reset form
@@ -46,7 +46,11 @@ export default function ReflectionJournal({ reflections, goals, onSubmit, curren
           <MessageSquare className="text-primary-600" size={16} />
           <span className="text-sm font-semibold text-gray-700">Mentor Feedback:</span>
         </div>
-        <p className="text-gray-700">{existingReflection.mentorFeedback}</p>
+        <p className="text-gray-700">
+          {typeof existingReflection.mentorFeedback === 'string' 
+            ? existingReflection.mentorFeedback 
+            : existingReflection.mentorFeedback?.feedback || ''}
+        </p>
       </div>
     )
   }

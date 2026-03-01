@@ -9,6 +9,7 @@ import SessionDetailModal from '../components/sessions/SessionDetailModal'
 import EnhancedMentorDashboard from '../components/mentor/EnhancedMentorDashboard'
 import MentorSessionDetailModal from '../components/mentor/MentorSessionDetailModal'
 import MenteeManagement from '../components/mentor/MenteeManagement'
+import MentorAvailabilityEditor from '../components/mentor/MentorAvailabilityEditor'
 import MentorAnalytics from '../components/mentor/MentorAnalytics'
 import NotificationSystem from '../components/notifications/NotificationSystem'
 import MenteeProfileModal from '../components/mentor/MenteeProfileModal'
@@ -31,14 +32,16 @@ export default function Dashboard() {
     markNotificationAsRead,
     getUnreadNotificationCount,
     getMentorStats,
-    getMenteeSummaries
+    getMenteeSummaries,
+    getMentorAvailability,
+    updateMentorAvailability
   } = useApp()
   const navigate = useNavigate()
   const [selectedSessionForFeedback, setSelectedSessionForFeedback] = useState<Session | null>(null)
   const [selectedSessionForDetail, setSelectedSessionForDetail] = useState<Session | null>(null)
   const [selectedMentorSession, setSelectedMentorSession] = useState<Session | null>(null)
   const [selectedMentee, setSelectedMentee] = useState<MenteeSummary | null>(null)
-  const [activeMentorTab, setActiveMentorTab] = useState<'dashboard' | 'mentees' | 'analytics'>('dashboard')
+  const [activeMentorTab, setActiveMentorTab] = useState<'dashboard' | 'mentees' | 'analytics' | 'availability'>('dashboard')
 
   // Show loading state while checking for user
   if (loading) {
@@ -173,6 +176,15 @@ export default function Dashboard() {
             >
               Analytics
             </button>
+            <button
+              onClick={() => setActiveMentorTab('availability')}
+              className={`px-4 py-2 font-semibold transition-colors ${activeMentorTab === 'availability'
+                ? 'text-primary-600 border-b-2 border-primary-600'
+                : 'text-gray-600 hover:text-gray-900'
+                }`}
+            >
+              My availability
+            </button>
           </div>
 
           {/* Tab Content */}
@@ -217,6 +229,16 @@ export default function Dashboard() {
             />
           )}
 
+          {activeMentorTab === 'availability' && (
+            <div className="max-w-2xl">
+              <MentorAvailabilityEditor
+                mentorId={user.id}
+                initialAvailability={getMentorAvailability(user.id)}
+                onSave={(availability) => updateMentorAvailability(user.id, availability)}
+              />
+            </div>
+          )}
+
           {/* Mentor Session Detail Modal */}
           {selectedMentorSession && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -240,6 +262,7 @@ export default function Dashboard() {
                 menteeSummary={selectedMentee}
                 sessions={sessions}
                 feedbacks={sessionFeedbacks}
+                mentorId={user.id}
                 onClose={() => setSelectedMentee(null)}
               />
             </div>
@@ -256,7 +279,7 @@ export default function Dashboard() {
       {/* Completed Sessions with Feedback Prompts - Show below dashboard */}
       {(() => {
         const completedSessions = sessions.filter(s =>
-          s.status === 'completed' &&
+          s.status === 'COMPLETED' &&
           s.menteeId === user.id &&
           (!s.feedbackEligible || s.feedbackEligible === true)
         )
@@ -312,10 +335,8 @@ export default function Dashboard() {
               setSelectedSessionForDetail(null)
               setSelectedSessionForFeedback(selectedSessionForDetail)
             }}
-            currentUserId={user.id}
-            sessionNotes={getMentorSessionNotes(selectedSessionForDetail.id)}
-            onUpdateNotes={updateMentorSessionNotes}
             onUpdateSession={updateSession}
+            currentUserId={user.id}
           />
         </div>
       )}

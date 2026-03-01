@@ -1,62 +1,69 @@
-import { X, Calendar, Clock, MapPin, Video, DollarSign } from 'lucide-react'
-import { MentorSessionNotes, Session } from '../../types'
-import { format, isValid, parse } from 'date-fns'
+import { useState } from 'react'
+import { X, Calendar, Clock, MapPin, Video, DollarSign, AlertCircle } from 'lucide-react'
+import { Session } from '../../types'
+import { format } from 'date-fns'
+import { getSessionDateTime } from '../../utils/sessionTime'
 import FeedbackPrompt from '../feedback/FeedbackPrompt'
 
 interface SessionDetailModalProps {
   session: Session
   onClose: () => void
   onLeaveFeedback?: () => void
+  onUpdateSession?: (sessionId: string, updates: Partial<Session>) => Promise<void>
   currentUserId: string
-  sessionNotes?: MentorSessionNotes | null
-  onUpdateNotes?: (noteId: string, updates: Partial<MentorSessionNotes>) => void
-  onUpdateSession?: (sessionId: string, updates: Partial<Session>) => void
 }
 
 export default function SessionDetailModal({
   session,
   onClose,
   onLeaveFeedback,
-  currentUserId,
-  sessionNotes,
-  onUpdateNotes,
-  onUpdateSession
+  onUpdateSession,
+  currentUserId
 }: SessionDetailModalProps) {
+  const [updating, setUpdating] = useState(false)
+  const [updateError, setUpdateError] = useState<string | null>(null)
   const isMentee = session.menteeId === currentUserId
-  const sessionDate = (() => {
-    if (session.date) {
-      const fromIso = new Date(session.date)
-      if (isValid(fromIso)) return fromIso
-    }
-    if (session.date && session.time) {
-      const parsed = parse(`${session.date} ${session.time}`, 'yyyy-MM-dd h:mm a', new Date())
-      if (isValid(parsed)) return parsed
-    }
-    return null
-  })()
-  const endTime = sessionDate ? new Date(sessionDate.getTime() + session.duration * 60000) : null
-  const dateLabel = sessionDate ? format(sessionDate, 'EEEE, MMMM d, yyyy') : 'Date TBD'
-  const timeLabel = sessionDate
-    ? `${format(sessionDate, 'h:mm a')} - ${format(endTime ?? sessionDate, 'h:mm a')}`
-    : 'Time TBD'
-  const normalizedStatus = session.status.toLowerCase()
-  const now = new Date()
-  const hoursUntil = sessionDate ? (sessionDate.getTime() - now.getTime()) / 36e5 : null
-  const canCancel = normalizedStatus !== 'cancelled' && normalizedStatus !== 'completed'
-    && !!sessionDate && hoursUntil !== null && hoursUntil >= 24
+  const sessionMoment = getSessionDateTime(session)
+  const sessionDate = sessionMoment ?? new Date(session.date)
+  const endTime = new Date(sessionDate.getTime() + session.duration * 60000)
 
-  const toggleActionItem = (itemId: string) => {
-    if (!sessionNotes || !onUpdateNotes) return
-    const nextItems = (sessionNotes.actionItems || []).map(item =>
-      item.id === itemId ? { ...item, completed: !item.completed } : item
-    )
-    onUpdateNotes(sessionNotes.id, { actionItems: nextItems })
+  const handleAcceptCancellation = async () => {
+    if (!onUpdateSession) return
+    setUpdating(true)
+    setUpdateError(null)
+    try {
+      await onUpdateSession(session.id, {
+        status: 'CANCELLED',
+        cancelledAt: new Date().toISOString(),
+        cancelledBy: 'mentor',
+        cancellationReason: session.cancellationReason,
+        menteeAcceptedCancellation: true,
+        cancellationRequestedAt: undefined
+      })
+      onClose()
+    } catch (err) {
+      setUpdateError(err instanceof Error ? err.message : 'Failed to accept cancellation. Please try again.')
+    } finally {
+      setUpdating(false)
+    }
   }
 
-  const handleCancel = async () => {
-    if (!onUpdateSession || !canCancel) return
-    await onUpdateSession(session.id, { status: 'cancelled' })
-    onClose()
+  const handleRejectCancellation = async () => {
+    if (!onUpdateSession) return
+    setUpdating(true)
+    setUpdateError(null)
+    try {
+      await onUpdateSession(session.id, {
+        menteeAcceptedCancellation: false,
+        cancellationRequestedAt: undefined,
+        cancellationReason: undefined
+      })
+      onClose()
+    } catch (err) {
+      setUpdateError(err instanceof Error ? err.message : 'Failed to reject cancellation. Please try again.')
+    } finally {
+      setUpdating(false)
+    }
   }
 
   // Fix: Check if mentor exists
@@ -79,14 +86,22 @@ export default function SessionDetailModal({
 
       <div className="p-6 space-y-6">
         {/* Status Badge */}
-        <div className="flex items-center justify-between">
-          <span className={`px-3 py-1 rounded-full text-sm font-semibold ${session.status === 'completed' || session.status === 'COMPLETED' ? 'bg-green-100 text-green-700' :
-              session.status === 'confirmed' || session.status === 'CONFIRMED' ? 'bg-blue-100 text-blue-700' :
-                session.status === 'pending' || session.status === 'PENDING' ? 'bg-yellow-100 text-yellow-700' :
-                  'bg-red-100 text-red-700'
-            }`}>
-            {session.status.charAt(0).toUpperCase() + session.status.slice(1).toLowerCase()}
-          </span>
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <span className={`px-3 py-1 rounded-full text-sm font-semibold ${session.status === 'COMPLETED' ? 'bg-green-100 text-green-700' :
+                session.status === 'CONFIRMED' ? 'bg-blue-100 text-blue-700' :
+                  session.status === 'PENDING' ? 'bg-yellow-100 text-yellow-700' :
+                    'bg-red-100 text-red-700'
+              }`}>
+              {session.status.charAt(0).toUpperCase() + session.status.slice(1).toLowerCase()}
+            </span>
+          </div>
+          {isMentee && session.status === 'PENDING' && (
+            <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+              <AlertCircle className="text-amber-600 shrink-0" size={20} />
+              <p className="text-sm font-medium text-amber-800">Waiting for your mentor to accept this session. You’ll see it as confirmed once they approve.</p>
+            </div>
+          )}
         </div>
 
         {/* Session Info */}
@@ -95,7 +110,7 @@ export default function SessionDetailModal({
             <Calendar className="text-primary-600 mt-1" size={20} />
             <div>
               <p className="text-sm text-gray-600">Date</p>
-              <p className="font-semibold text-gray-900">{dateLabel}</p>
+              <p className="font-semibold text-gray-900">{format(sessionDate, 'EEEE, MMMM d, yyyy')}</p>
             </div>
           </div>
 
@@ -103,7 +118,9 @@ export default function SessionDetailModal({
             <Clock className="text-primary-600 mt-1" size={20} />
             <div>
               <p className="text-sm text-gray-600">Time</p>
-              <p className="font-semibold text-gray-900">{timeLabel}</p>
+              <p className="font-semibold text-gray-900">
+                {format(sessionDate, 'h:mm a')} - {format(endTime, 'h:mm a')}
+              </p>
               <p className="text-xs text-gray-500">{session.duration} minutes</p>
             </div>
           </div>
@@ -134,69 +151,44 @@ export default function SessionDetailModal({
           </div>
         </div>
 
+        {/* Mentor requested cancellation (mentee can accept/reject) */}
+        {isMentee && session.cancellationRequestedAt && onUpdateSession && (
+          <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg space-y-3">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="text-amber-600 shrink-0" size={20} />
+              <p className="font-semibold text-amber-800">Mentor requested to cancel this session</p>
+            </div>
+            <p className="text-sm text-amber-700">Reason: {session.cancellationReason}</p>
+            <p className="text-xs text-amber-600">If you accept, the session will be cancelled. If you reject, the session stays and the mentor may be penalised for last-minute cancellation requests.</p>
+            {updateError && (
+              <p className="text-sm text-red-600">{updateError}</p>
+            )}
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={handleAcceptCancellation}
+                disabled={updating}
+                className="px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-medium hover:bg-amber-700 disabled:opacity-50"
+              >
+                {updating ? 'Processing…' : 'Accept cancellation'}
+              </button>
+              <button
+                type="button"
+                onClick={handleRejectCancellation}
+                disabled={updating}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-300 disabled:opacity-50"
+              >
+                Reject (session stays)
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Topic */}
         <div>
           <p className="text-sm text-gray-600 mb-2">Topic</p>
           <p className="font-semibold text-gray-900">{session.topic}</p>
         </div>
-
-        {/* Rejection Reason (if session was rejected) */}
-        {session.rejectionReason && normalizedStatus === 'cancelled' && (
-          <div className="border-t border-gray-200 pt-4">
-            <div className="bg-red-50 border-2 border-red-200 rounded-lg p-4">
-              <p className="text-sm font-semibold text-red-900 mb-2">Session Rejected</p>
-              <p className="text-sm text-red-800">{session.rejectionReason}</p>
-            </div>
-          </div>
-        )}
-
-        {/* Mentor Notes & Action Items */}
-        {sessionNotes && (
-          <div className="border-t border-gray-200 pt-4 space-y-4">
-            <div>
-              <p className="text-sm text-gray-600 mb-2">Session Summary</p>
-              <p className="text-gray-900">{sessionNotes.summary}</p>
-            </div>
-            {sessionNotes.followUps && (
-              <div>
-                <p className="text-sm text-gray-600 mb-2">Follow-ups</p>
-                <p className="text-gray-900">{sessionNotes.followUps}</p>
-              </div>
-            )}
-            {sessionNotes.growthFocus && (
-              <div>
-                <p className="text-sm text-gray-600 mb-2">Growth Focus</p>
-                <p className="text-gray-900">{sessionNotes.growthFocus}</p>
-              </div>
-            )}
-            <div>
-              <p className="text-sm text-gray-600 mb-2">Action Items</p>
-              {sessionNotes.actionItems && sessionNotes.actionItems.length > 0 ? (
-                <div className="space-y-2">
-                  {sessionNotes.actionItems.map(item => (
-                    <label key={item.id} className="flex items-center gap-3 text-sm text-gray-700">
-                      <input
-                        type="checkbox"
-                        checked={item.completed}
-                        onChange={() => toggleActionItem(item.id)}
-                        disabled={!onUpdateNotes}
-                        className="h-4 w-4 text-primary-600"
-                      />
-                      <span className={item.completed ? 'line-through text-gray-400' : ''}>
-                        {item.text || 'Action item'}
-                      </span>
-                      {item.dueDate && (
-                        <span className="text-xs text-gray-500">Due {format(new Date(item.dueDate), 'MMM d, yyyy')}</span>
-                      )}
-                    </label>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-gray-500">No action items yet.</p>
-              )}
-            </div>
-          </div>
-        )}
 
         {/* Participants */}
         <div className="border-t border-gray-200 pt-4">
@@ -248,32 +240,12 @@ export default function SessionDetailModal({
         )}
 
         {/* Feedback Section (for mentees on completed sessions) */}
-        {isMentee && (session.status === 'completed' || session.status === 'COMPLETED') && onLeaveFeedback && (
+        {isMentee && session.status === 'COMPLETED' && onLeaveFeedback && (
           <div className="border-t border-gray-200 pt-4">
             <FeedbackPrompt
               session={session}
               onLeaveFeedback={onLeaveFeedback}
             />
-          </div>
-        )}
-
-        {isMentee && onUpdateSession && (
-          <div className="border-t border-gray-200 pt-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <button
-                type="button"
-                onClick={handleCancel}
-                disabled={!canCancel}
-                className="px-4 py-2 border border-red-500 text-red-600 rounded-lg font-semibold hover:bg-red-50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                Cancel session
-              </button>
-              {!canCancel && (
-                <span className="text-sm text-gray-500">
-                  Cancellations are allowed only more than 24 hours before the session.
-                </span>
-              )}
-            </div>
           </div>
         )}
 

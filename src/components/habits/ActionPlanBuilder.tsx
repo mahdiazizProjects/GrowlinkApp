@@ -24,16 +24,19 @@ export default function ActionPlanBuilder({ goal, existingHabits = [], existingA
           const actionItems = await api.listActionItems(existingActionPlanId)
           if (actionItems.length > 0) {
             // Convert ActionItems to Habits format
-            const loadedHabits = actionItems.map(item => ({
-              actionItemId: item.id,
-              title: item.title,
-              description: item.description || '',
-              frequency: item.frequency === 'WEEKLY' ? 'weekly' as const : 'daily' as const,
-              duration: 2, // Default since ActionItem doesn't have duration
-              cue: { time: '', place: '', context: '' }, // Not stored in ActionItem
-              reward: '', // Not stored in ActionItem
-              status: item.status === 'ACTIVE' ? 'active' as const : item.status === 'PAUSED' ? 'paused' as const : 'completed' as const
-            }))
+            const loadedHabits = actionItems.map((item: { id: string; title: string; description?: string; frequency: string; status?: string }) => {
+              const status = item.status === 'ACTIVE' ? 'active' as const : item.status === 'PAUSED' ? 'paused' as const : 'completed' as const
+              return {
+                actionItemId: item.id,
+                title: item.title,
+                description: item.description || '',
+                frequency: item.frequency === 'WEEKLY' ? 'weekly' as const : 'daily' as const,
+                duration: 2,
+                cue: { time: '', place: '', context: '' },
+                reward: '',
+                status
+              }
+            })
             setHabits(loadedHabits)
           } else {
             // No items found, start with empty habit
@@ -105,8 +108,6 @@ export default function ActionPlanBuilder({ goal, existingHabits = [], existingA
   }
 
   const handleSave = () => {
-    console.log('ActionPlanBuilder: handleSave called, habits:', habits)
-    
     const validHabits = habits
       .filter(h => h.title && h.duration)
       .map(h => ({
@@ -121,17 +122,14 @@ export default function ActionPlanBuilder({ goal, existingHabits = [], existingA
         // Preserve actionItemId if it exists (for matching existing items)
         ...(h.actionItemId && { actionItemId: h.actionItemId })
       }))
-    
-    console.log('ActionPlanBuilder: validHabits:', validHabits)
-    
+
     // Allow saving with 0 habits - this will delete all items from the plan
     // If it's a new plan with 0 habits, we still need at least one
     if (validHabits.length === 0 && !existingActionPlanId) {
       alert('Please add at least one habit with a title and duration')
       return
     }
-    
-    console.log('ActionPlanBuilder: Calling onSave with', validHabits.length, 'habits')
+
     onSave(validHabits, existingActionPlanId)
     onClose()
   }

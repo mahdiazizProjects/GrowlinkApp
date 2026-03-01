@@ -40,7 +40,7 @@ export default function MenteeManagement({ menteeSummaries, sessions, onViewMent
         {menteeSummaries.map((summary) => {
           const menteeSessions = sessions.filter(s => s.menteeId === summary.menteeId)
           const upcomingSessions = menteeSessions.filter(s =>
-            (s.status === 'confirmed' || s.status === 'pending') && isUpcomingSession(s)
+            (s.status === 'CONFIRMED' || s.status === 'PENDING') && isUpcomingSession(s)
           ).length
 
           return (

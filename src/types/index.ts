@@ -38,6 +38,21 @@ export interface Venue {
   partnershipTier: 'bronze' | 'silver' | 'gold';
 }
 
+/** Day of week 0 = Sunday, 1 = Monday, ... 6 = Saturday. Time in "HH:mm" 24h. */
+export interface MentorAvailabilitySlot {
+  dayOfWeek: number;
+  startTime: string;
+  endTime: string;
+}
+
+/** Mentor's recurring weekly timetable. Default: weekdays 9–5 if empty. */
+export interface MentorAvailability {
+  mentorId: string;
+  slots: MentorAvailabilitySlot[];
+  timezone?: string;
+  updatedAt?: string;
+}
+
 export interface Session {
   id: string;
   mentorId: string;
@@ -50,7 +65,7 @@ export interface Session {
   date: string;
   time: string;
   duration: number; // in minutes
-  status: 'PENDING' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED' | 'pending' | 'confirmed' | 'completed' | 'cancelled';
+  status: 'PENDING' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED';
   price?: number;
   topic?: string;
   rating?: number;
@@ -59,8 +74,15 @@ export interface Session {
   feedbackSubmitted?: boolean;
   feedbackSubmittedAt?: string;
   notes?: string;
-  rejectionReason?: string;
   meetingLink?: string;
+  /** Cancellation: mentor must notify mentee (e.g. by email). Within 24h requires mentee to accept reason or mentor is penalized. */
+  cancelledAt?: string;
+  cancelledBy?: 'mentor' | 'mentee' | 'system';
+  cancellationReason?: string;
+  /** For cancellations within 24h: true if mentee accepted; false if rejected (mentor penalized). */
+  menteeAcceptedCancellation?: boolean;
+  /** Set when mentor requests cancellation within 24h; session stays CONFIRMED until mentee accepts/rejects. */
+  cancellationRequestedAt?: string;
 }
 
 export interface Event {
@@ -83,55 +105,30 @@ export interface Event {
   image?: string;
 }
 
-export type ReactionType = 'heart' | 'celebrate' | 'support';
-
-// Reflection: Private daily/weekly check-ins for personal growth tracking
 export interface Reflection {
   id: string;
   userId: string;
-  user?: User;
-  date: string;                     // Required - when reflection was made
-  mood?: 'GREAT' | 'GOOD' | 'NEUTRAL' | 'BAD' | 'AWFUL';
-  moodScore?: number;
-  text: string;                     // Required - main reflection text
-  sharedWithMentorId?: string;      // Can share with specific mentor
-  mentorFeedback?: string;
-  aiInsights?: string;
-  createdAt: string;
-  updatedAt?: string;
-}
-
-export interface Journey {
-  id: string;
-  userId: string;
-  user?: User;
+  date: string;
   goalId?: string;
-  mood?: 'GREAT' | 'GOOD' | 'NEUTRAL' | 'BAD' | 'AWFUL';
-  text: string;
-  visibility: 'everyone' | 'mentors' | 'private' | 'selected';
-  selectedMentorIds?: string[];
-  tags?: string[];
-  reactions?: JourneyReaction[];
-  comments?: JourneyComment[];
+  week?: string; // Legacy field
+  mood: 'GREAT' | 'GOOD' | 'NEUTRAL' | 'BAD' | 'AWFUL';
+  moodScore?: number;
+  text?: string; // Simple text field for daily reflections
+  content?: {
+    whatWentWell?: string;
+    whatFeltHard?: string;
+    insights?: string;
+  } | string; // Allow both for compatibility
+  isShared: boolean;
+  sharedWithMentorId?: string;
+  mentorFeedback?: {
+    mentorId: string;
+    feedback: string;
+    createdAt: string;
+  } | string; // Allow both
+  aiInsights?: string; // Legacy field
   createdAt: string;
   updatedAt?: string;
-}
-
-export interface JourneyReaction {
-  id: string;
-  journeyId: string;
-  userId: string;
-  type: ReactionType;
-  createdAt: string;
-}
-
-export interface JourneyComment {
-  id: string;
-  journeyId: string;
-  userId: string;
-  user?: User;
-  text: string;
-  createdAt: string;
 }
 
 export interface Review {
@@ -210,7 +207,7 @@ export interface Goal {
   category?: string;
   progress?: number; // 0-100
   dueDate?: string;
-  status?: 'DRAFT' | 'PENDING_APPROVAL' | 'ACTIVE' | 'COMPLETED' | 'ARCHIVED' | 'draft' | 'pending-approval' | 'active' | 'completed' | 'archived';
+  status?: 'draft' | 'pending-approval' | 'active' | 'completed' | 'archived';
   mentorId?: string;
   createdAt?: string;
   updatedAt?: string;
@@ -291,18 +288,10 @@ export interface MentorSessionNotes {
   mentorId: string;
   summary: string;
   followUps: string;
-  actionItems?: SessionActionItem[];
   growthFocus?: string;
   privateNotes?: string;
   createdAt: string;
   updatedAt: string;
-}
-
-export interface SessionActionItem {
-  id: string;
-  text: string;
-  dueDate?: string;
-  completed: boolean;
 }
 
 export interface MentorStats {
@@ -336,4 +325,37 @@ export interface Rating {
   comment: string;
   isInPerson: boolean;
   createdAt: string;
+}
+
+export type ReactionType = 'heart' | 'celebrate' | 'support' | 'HEART' | 'CELEBRATE' | 'SUPPORT';
+
+export interface JourneyReaction {
+  id?: string;
+  userId: string;
+  type: ReactionType;
+  user?: User;
+}
+
+export interface JourneyComment {
+  id: string;
+  userId: string;
+  text: string;
+  createdAt: string;
+  user?: User;
+}
+
+export interface Journey {
+  id: string;
+  userId: string;
+  user?: User;
+  goalId?: string;
+  mood?: 'GREAT' | 'GOOD' | 'NEUTRAL' | 'BAD' | 'AWFUL';
+  text: string;
+  visibility: 'everyone' | 'mentors' | 'private' | 'selected' | 'EVERYONE' | 'MENTORS' | 'PRIVATE' | 'SELECTED';
+  selectedMentorIds?: string[];
+  tags?: string[];
+  reactions?: JourneyReaction[];
+  comments?: JourneyComment[];
+  createdAt: string;
+  updatedAt?: string;
 }

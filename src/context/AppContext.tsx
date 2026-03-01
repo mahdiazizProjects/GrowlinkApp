@@ -1,7 +1,22 @@
-import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react'
-import { User, Venue, Session, Event, Rating, Goal, Habit, HabitCompletion, Reflection, Journey, Badge, SessionFeedback, MentorFeedbackStats, MentorSessionNotes, Notification, MentorStats, MenteeSummary, ReactionType } from '../types'
+import { createContext, useContext, useState, useEffect, useCallback, type Dispatch, type SetStateAction, type ReactNode } from 'react'
+import { User, Venue, Session, Event, Rating, Goal, Habit, HabitCompletion, Reflection, Journey, JourneyComment, Badge, SessionFeedback, MentorFeedbackStats, MentorSessionNotes, Notification, MentorStats, MenteeSummary, ReactionType, MentorAvailability } from '../types'
 import { fetchUserAttributes, getCurrentUser, signOut } from 'aws-amplify/auth'
 import * as api from '../services/api'
+import { getSessionDateTime } from '../utils/sessionTime'
+
+async function cancelPastPendingSessions(
+  sessionsData: Session[],
+  setSessions: Dispatch<SetStateAction<Session[]>>
+): Promise<void> {
+  const toCancel = sessionsData.filter(s => {
+    const dt = getSessionDateTime(s)
+    return s.status === 'PENDING' && !!dt && dt.getTime() < Date.now()
+  })
+  if (toCancel.length === 0) return
+  const results = await Promise.all(toCancel.map(s => api.updateSession(s.id, { status: 'CANCELLED' }).then(u => u, () => null)))
+  const updatedMap = new Map(results.filter((u): u is Session => u != null).map(u => [u.id, u]))
+  if (updatedMap.size > 0) setSessions(prev => prev.map(x => updatedMap.get(x.id) ?? x))
+}
 
 interface AppContextType {
   currentUser: User | null
@@ -47,6 +62,9 @@ interface AppContextType {
   getUnreadNotificationCount: (userId: string) => number
   getMentorStats: (mentorId: string) => MentorStats | null
   getMenteeSummaries: (mentorId: string) => MenteeSummary[]
+  getMentorAvailability: (mentorId: string) => MentorAvailability
+  updateMentorAvailability: (mentorId: string, availability: MentorAvailability) => Promise<void>
+  getAvailableSlotsForMentor: (mentorId: string, date: string, durationMinutes?: number) => string[]
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined)
@@ -127,6 +145,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [sessionFeedbacks, setSessionFeedbacks] = useState<SessionFeedback[]>([])
   const [mentorSessionNotes, setMentorSessionNotes] = useState<MentorSessionNotes[]>([])
   const [notifications, setNotifications] = useState<Notification[]>([])
+  const [mentorAvailabilities, setMentorAvailabilities] = useState<Record<string, MentorAvailability>>({})
 
   // Load initial data when user changes
   useEffect(() => {
@@ -191,10 +210,43 @@ export function AppProvider({ children }: { children: ReactNode }) {
           setHabits(habitsData)
           setReflections(reflectionsData)
           setJourneys(journeysData)
+
+          const mentorIds = new Set<string>()
+          if (currentUser.role === 'MENTOR' || currentUser.role === 'BOTH' || currentUser.role === 'mentor') {
+            mentorIds.add(currentUser.id)
+          }
+          sessionsData.forEach(s => mentorIds.add(s.mentorId))
+          const availabilities = await Promise.all(
+            Array.from(mentorIds).map(id => api.getMentorAvailability(id))
+          )
+          const avMap: Record<string, MentorAvailability> = {}
+          availabilities.forEach(a => { if (a) avMap[a.mentorId] = a })
+          setMentorAvailabilities(avMap)
+
+          // Show notifications for pending session requests (notifications are in-memory; mentor sees these when they load)
+          setNotifications(prev => {
+            const existingRelated = new Set(prev.map(n => n.relatedId).filter(Boolean))
+            const pendingForMentor = sessionsData.filter(
+              s => s.mentorId === currentUser.id && s.status === 'PENDING' && !existingRelated.has(s.id)
+            )
+            const newOnes = pendingForMentor.map(s => ({
+              id: `notif-pending-${s.id}`,
+              userId: currentUser.id,
+              title: 'New Session Request',
+              message: `${s.mentee?.name || 'A mentee'} requested a session. Approve or reject from your dashboard.`,
+              type: 'session-booked' as const,
+              read: false,
+              relatedId: s.id,
+              createdAt: new Date().toISOString()
+            }))
+            return newOnes.length > 0 ? [...newOnes, ...prev] : prev
+          })
+          await cancelPastPendingSessions(sessionsData, setSessions)
         } else {
           // Load public data
           const sessionsData = await api.listSessions()
           setSessions(sessionsData)
+          await cancelPastPendingSessions(sessionsData, setSessions)
         }
 
         // Load events
@@ -250,16 +302,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  const updateSession = async (sessionId: string, updates: Partial<Session>) => {
-    try {
-      const updated = await api.updateSession(sessionId, updates)
-      if (updated) {
-        setSessions(prev => prev.map(s => s.id === sessionId ? updated : s))
-      }
-    } catch (error) {
-      console.error('Error updating session:', error)
+  const updateSession = useCallback(async (sessionId: string, updates: Partial<Session>) => {
+    const updated = await api.updateSession(sessionId, updates)
+    if (updated) {
+      setSessions(prev => prev.map(s => s.id === sessionId ? updated : s))
     }
-  }
+  }, [])
 
   const addEvent = (event: Event) => {
     setEvents([...events, event])
@@ -371,15 +419,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (!journey) return
 
       const existingReactions = journey.reactions || []
-      const userReaction = existingReactions.find(r => r.userId === userId)
+      const userReaction = existingReactions.find((r: { userId: string; type: string }) => r.userId === userId)
 
       if (userReaction) {
+        const reactionId = userReaction.id
         // If same type, remove the reaction (toggle off)
         if (userReaction.type === type) {
-          await api.deleteJourneyReaction(userReaction.id)
+          if (reactionId) await api.deleteJourneyReaction(reactionId)
         } else {
           // Change reaction type - delete old and create new
-          await api.deleteJourneyReaction(userReaction.id)
+          if (reactionId) await api.deleteJourneyReaction(reactionId)
           await api.createJourneyReaction({ journeyId, userId, type })
         }
       } else {
@@ -405,7 +454,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (newComment) {
         setJourneys(journeys.map(j =>
           j.id === journeyId
-            ? { ...j, comments: [...(j.comments || []), newComment] }
+            ? { ...j, comments: [...(j.comments || []), newComment as JourneyComment] }
             : j
         ))
       }
@@ -531,8 +580,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const recentSessions = mentorSessions.filter(s => new Date(s.date) >= fourWeeksAgo)
     const sessionsPerWeek = recentSessions.length / 4
 
-    const feedbackResponseRate = mentorSessions.length > 0
-      ? (mentorFeedbacks.length / mentorSessions.filter(s => s.status === 'completed').length) * 100
+    const completedCount = mentorSessions.filter(s => s.status === 'COMPLETED').length
+    const feedbackResponseRate = completedCount > 0
+      ? (mentorFeedbacks.length / completedCount) * 100
       : 0
 
     return {
@@ -548,13 +598,108 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  const DEFAULT_AVAILABILITY_SLOTS: MentorAvailability['slots'] = [
+    { dayOfWeek: 1, startTime: '09:00', endTime: '17:00' },
+    { dayOfWeek: 2, startTime: '09:00', endTime: '17:00' },
+    { dayOfWeek: 3, startTime: '09:00', endTime: '17:00' },
+    { dayOfWeek: 4, startTime: '09:00', endTime: '17:00' },
+    { dayOfWeek: 5, startTime: '09:00', endTime: '17:00' }
+  ]
+
+  const getMentorAvailability = useCallback((mentorId: string): MentorAvailability => {
+    const stored = mentorAvailabilities[mentorId]
+    if (stored && stored.slots.length > 0) {
+      return stored
+    }
+    return {
+      mentorId,
+      slots: DEFAULT_AVAILABILITY_SLOTS,
+      updatedAt: undefined
+    }
+  }, [mentorAvailabilities])
+
+  const updateMentorAvailability = useCallback(async (mentorId: string, availability: MentorAvailability) => {
+    const updated = { ...availability, mentorId, updatedAt: new Date().toISOString() }
+    const saved = await api.updateMentorAvailability(mentorId, updated)
+    setMentorAvailabilities(prev => ({ ...prev, [mentorId]: saved }))
+  }, [])
+
+  const getAvailableSlotsForMentor = useCallback((mentorId: string, dateStr: string, durationMinutes = 60): string[] => {
+    const availability = getMentorAvailability(mentorId)
+    const d = new Date(dateStr + 'T00:00:00')
+    const dayOfWeek = d.getDay()
+    const daySlots = availability.slots.filter(s => s.dayOfWeek === dayOfWeek)
+    if (daySlots.length === 0) return []
+
+    const slots: string[] = []
+    const today = new Date()
+    const todayLocal = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+    const isToday = dateStr === todayLocal
+
+    for (const range of daySlots) {
+      const [startH, startM] = range.startTime.split(':').map(Number)
+      const [endH, endM] = range.endTime.split(':').map(Number)
+      const startMinutes = startH * 60 + startM
+      const endMinutes = endH * 60 + endM
+
+      let current = startMinutes
+      while (current + durationMinutes <= endMinutes) {
+        const hour = Math.floor(current / 60)
+        const min = current % 60
+        const timeString = `${hour.toString().padStart(2, '0')}:${min.toString().padStart(2, '0')}`
+        if (isToday) {
+          const now = new Date()
+          const nowMinutes = now.getHours() * 60 + now.getMinutes()
+          if (current >= nowMinutes + 15) slots.push(timeString)
+        } else {
+          slots.push(timeString)
+        }
+        current += 15
+      }
+    }
+
+    const mentorSessions = sessions.filter(
+      s => s.mentorId === mentorId &&
+        (s.status === 'CONFIRMED' || s.status === 'PENDING') &&
+        !s.cancelledAt
+    )
+    // Block every 15-min slot that falls within any existing session's [start, start+duration)
+    const blockedSlots = new Set<string>()
+    mentorSessions
+      .filter(s => s.date.slice(0, 10) === dateStr)
+      .forEach(s => {
+        const startTime = s.time && s.time.length >= 5 ? s.time.slice(0, 5) : s.date.slice(11, 16)
+        const [startH, startM] = startTime.split(':').map(Number)
+        const startMinutes = startH * 60 + startM
+        const dur = s.duration ?? 60
+        const endMinutes = startMinutes + dur
+        for (let m = startMinutes; m < endMinutes; m += 15) {
+          const h = Math.floor(m / 60)
+          const min = m % 60
+          blockedSlots.add(`${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`)
+        }
+      })
+
+    return slots.filter(slot => {
+      const [slotH, slotM] = slot.split(':').map(Number)
+      const slotStartMinutes = slotH * 60 + slotM
+      for (let m = slotStartMinutes; m < slotStartMinutes + durationMinutes; m += 15) {
+        const h = Math.floor(m / 60)
+        const min = m % 60
+        const intervalKey = `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`
+        if (blockedSlots.has(intervalKey)) return false
+      }
+      return true
+    })
+  }, [getMentorAvailability, sessions])
+
   const getMenteeSummaries = (mentorId: string): MenteeSummary[] => {
     const mentorSessions = sessions.filter(s => s.mentorId === mentorId)
     const menteeIds = [...new Set(mentorSessions.map(s => s.menteeId))]
 
     return menteeIds.map(menteeId => {
       const menteeSessions = mentorSessions.filter(s => s.menteeId === menteeId)
-      const completedSessions = menteeSessions.filter(s => s.status === 'completed')
+      const completedSessions = menteeSessions.filter(s => s.status === 'COMPLETED')
       const menteeFeedbacks = sessionFeedbacks.filter(f => f.menteeId === menteeId && f.mentorId === mentorId)
 
       const averageRating = menteeFeedbacks.length > 0
@@ -622,7 +767,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       markNotificationAsRead,
       getUnreadNotificationCount,
       getMentorStats,
-      getMenteeSummaries
+      getMenteeSummaries,
+      getMentorAvailability,
+      updateMentorAvailability,
+      getAvailableSlotsForMentor
     }}>
       {children}
     </AppContext.Provider>

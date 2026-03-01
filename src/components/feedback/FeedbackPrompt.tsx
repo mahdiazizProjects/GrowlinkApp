@@ -8,7 +8,9 @@ interface FeedbackPromptProps {
 }
 
 export default function FeedbackPrompt({ session, onLeaveFeedback }: FeedbackPromptProps) {
-  const sessionDate = new Date(`${session.date}T${session.time}`)
+  const datePart = session.date.slice(0, 10)
+  const timePart = session.time || '00:00'
+  const sessionDate = new Date(`${datePart}T${timePart.length >= 5 ? timePart.slice(0, 5) : timePart}:00`)
   const hoursSinceSession = differenceInHours(new Date(), sessionDate)
   const daysSinceSession = Math.floor(hoursSinceSession / 24)
   const isExpired = daysSinceSession > 7

@@ -135,26 +135,26 @@ export default function JourneyPost({
   const [commentText, setCommentText] = useState('')
 
   const author = journey.user || allUsers.find(u => u.id === journey.userId)
-  const mood = journey.mood ? MOODS[journey.mood] : undefined
+  const mood = journey.mood ? MOODS[journey.mood as keyof typeof MOODS] : undefined
 
   // Get reaction counts (handle both uppercase and lowercase)
   const reactionCounts = {
-    heart: journey.reactions?.filter(r => {
+    heart: journey.reactions?.filter((r: { type: string; userId: string }) => {
       const rType = typeof r.type === 'string' ? r.type.toLowerCase() : r.type
       return rType === 'heart'
     }).length || 0,
-    celebrate: journey.reactions?.filter(r => {
+    celebrate: journey.reactions?.filter((r: { type: string; userId: string }) => {
       const rType = typeof r.type === 'string' ? r.type.toLowerCase() : r.type
       return rType === 'celebrate'
     }).length || 0,
-    support: journey.reactions?.filter(r => {
+    support: journey.reactions?.filter((r: { type: string; userId: string }) => {
       const rType = typeof r.type === 'string' ? r.type.toLowerCase() : r.type
       return rType === 'support'
     }).length || 0
   }
 
   const totalReactions = reactionCounts.heart + reactionCounts.celebrate + reactionCounts.support
-  const hasUserReacted = journey.reactions?.some(r => r.userId === currentUser.id)
+  const hasUserReacted = journey.reactions?.some((r: { userId: string }) => r.userId === currentUser.id)
 
   const handleAddComment = () => {
     if (commentText.trim()) {
@@ -184,8 +184,8 @@ export default function JourneyPost({
               <span>{formatDistanceToNow(new Date(journey.createdAt), { addSuffix: true })}</span>
               <span>•</span>
               <div className="flex items-center gap-1">
-                {VISIBILITY_ICONS[journey.visibility]}
-                <span>{VISIBILITY_LABELS[journey.visibility]}</span>
+                {VISIBILITY_ICONS[journey.visibility as keyof typeof VISIBILITY_ICONS]}
+                <span>{VISIBILITY_LABELS[journey.visibility as keyof typeof VISIBILITY_LABELS]}</span>
               </div>
             </div>
           </div>
@@ -207,7 +207,7 @@ export default function JourneyPost({
         {/* Tags */}
         {journey.tags && journey.tags.length > 0 && (
           <div className="flex flex-wrap gap-2 mt-3">
-            {journey.tags.map((tag, index) => (
+            {journey.tags?.map((tag: string, index: number) => (
               <span
                 key={index}
                 className="px-3 py-1 bg-purple-50 text-purple-700 rounded-full text-xs font-medium"
@@ -342,7 +342,7 @@ export default function JourneyPost({
           {/* Existing comments */}
           {journey.comments && journey.comments.length > 0 && (
             <div className="space-y-3 mb-4">
-              {journey.comments.map(comment => {
+              {journey.comments?.map((comment: { id: string; userId: string; text: string; createdAt: string; user?: User }) => {
                 const commenter = comment.user || allUsers.find(u => u.id === comment.userId)
                 return (
                   <div key={comment.id} className="flex gap-3">

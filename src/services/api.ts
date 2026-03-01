@@ -1,1057 +1,590 @@
-import { generateClient } from 'aws-amplify/data';
-import type { Schema } from '../../amplify/data/resource';
+// API service module – uses Amplify Data (AppSync) from your backend. No mock data.
+
+import { generateClient } from 'aws-amplify/data'
+import type { Schema } from '../../amplify/data/resource'
 import type {
-  User, Session, Goal, Habit, Reflection, Event, Venue, Journey, JourneyReaction, JourneyComment
-} from '../types';
+  User,
+  Session,
+  Goal,
+  Habit,
+  Reflection,
+  Journey,
+  Event,
+  ActionPlan,
+  ActionItem,
+  MentorAvailability
+} from '../types'
 
-// Lazy-load client to ensure Amplify is configured first
-let client: ReturnType<typeof generateClient<Schema>> | null = null;
-
-function getClient() {
-  if (!client) {
-    client = generateClient<Schema>();
-  }
-  return client;
+export interface CreateUserParams {
+  id?: string
+  email: string
+  name: string
+  username: string
+  role: 'MENTOR' | 'MENTEE' | 'BOTH' | 'mentor' | 'mentee'
+  [key: string]: unknown
 }
 
-// ==================== USER API ====================
+let _client: ReturnType<typeof generateClient<Schema>> | null = null
+function getClient() {
+  if (!_client) _client = generateClient<Schema>()
+  return _client
+}
+
+const mentorAvailabilityCache: Record<string, MentorAvailability> = {}
+
+function toAppUser(r: Record<string, unknown> | null): User | null {
+  if (!r || !r.id) return null
+  const role = (r.role as string) || 'MENTEE'
+  return {
+    id: r.id as string,
+    username: (r.username as string) || '',
+    email: (r.email as string) || '',
+    name: (r.name as string) || '',
+    title: r.title as string | undefined,
+    role: role as User['role'],
+    avatar: r.avatar as string | undefined,
+    bio: r.bio as string | undefined,
+    location: r.location as string | undefined,
+    skills: r.skills as string[] | undefined,
+    interests: r.interests as string[] | undefined,
+    createdAt: (r.createdAt as string) || new Date().toISOString()
+  }
+}
+
+function toLocalISOString(d: Date): string {
+  const y = d.getFullYear()
+  const mo = String(d.getMonth() + 1).padStart(2, '0')
+  const da = String(d.getDate()).padStart(2, '0')
+  const h = String(d.getHours()).padStart(2, '0')
+  const mi = String(d.getMinutes()).padStart(2, '0')
+  const s = String(d.getSeconds()).padStart(2, '0')
+  return `${y}-${mo}-${da}T${h}:${mi}:${s}`
+}
+
+function toAppSession(r: Record<string, unknown> | null, mentor?: User | null, mentee?: User | null): Session | null {
+  if (!r || !r.id) return null
+  const rawDateStr = (r.date as string) || ''
+  const isFullIso = rawDateStr.length >= 16 || rawDateStr.includes('T')
+  const localDateStr = isFullIso ? toLocalISOString(new Date(rawDateStr)) : rawDateStr
+  const time = isFullIso ? localDateStr.slice(11, 16) : ''
+  const status = ((r.status as string) ?? 'PENDING').toUpperCase() as Session['status']
+  const notes = r.notes as string | undefined
+  const meetingLink = r.meetingLink as string | undefined
+  return {
+    id: r.id as string,
+    mentorId: r.mentorId as string,
+    menteeId: r.menteeId as string,
+    mentor: mentor ?? undefined,
+    mentee: mentee ?? undefined,
+    type: meetingLink ? 'virtual' : 'in-person',
+    date: localDateStr,
+    time,
+    duration: (r.duration as number) ?? 60,
+    status,
+    notes,
+    topic: notes || undefined,
+    meetingLink,
+    ...(r.cancelledAt != null && { cancelledAt: r.cancelledAt as string }),
+    ...(r.cancelledBy != null && { cancelledBy: r.cancelledBy as Session['cancelledBy'] })
+  }
+}
+
+function toAppGoal(r: Record<string, unknown> | null): Goal | null {
+  if (!r || !r.id) return null
+  return {
+    id: r.id as string,
+    userId: r.userId as string,
+    title: r.title as string,
+    description: r.description as string | undefined,
+    category: r.category as string | undefined,
+    progress: r.progress as number | undefined,
+    dueDate: r.dueDate as string | undefined,
+    status: (r.status as Goal['status']) ?? 'active'
+  }
+}
+
+function toAppReflection(r: Record<string, unknown> | null): Reflection | null {
+  if (!r || !r.id) return null
+  return {
+    id: r.id as string,
+    userId: r.userId as string,
+    date: r.date as string,
+    mood: (r.mood as Reflection['mood']) ?? 'NEUTRAL',
+    moodScore: r.moodScore as number | undefined,
+    text: r.text as string | undefined,
+    isShared: !!r.sharedWithMentorId,
+    sharedWithMentorId: r.sharedWithMentorId as string | undefined,
+    mentorFeedback: r.mentorFeedback as string | undefined,
+    createdAt: (r.createdAt as string) || new Date().toISOString(),
+    updatedAt: r.updatedAt as string | undefined
+  }
+}
+
+function toAppJourney(
+  r: Record<string, unknown> | null,
+  reactions?: Journey['reactions'],
+  comments?: Journey['comments']
+): Journey | null {
+  if (!r || !r.id) return null
+  return {
+    id: r.id as string,
+    userId: r.userId as string,
+    goalId: r.goalId as string | undefined,
+    mood: r.mood as Journey['mood'] | undefined,
+    text: (r.text as string) || '',
+    visibility: ((r.visibility as string) ?? 'everyone').toLowerCase() as Journey['visibility'],
+    selectedMentorIds: r.selectedMentorIds as string[] | undefined,
+    tags: r.tags as string[] | undefined,
+    reactions: reactions ?? [],
+    comments: comments ?? [],
+    createdAt: (r.createdAt as string) || new Date().toISOString(),
+    updatedAt: r.updatedAt as string | undefined
+  }
+}
 
 export async function getUser(userId: string): Promise<User | null> {
-  try {
-    const { data } = await getClient().models.User.get({ id: userId });
-    if (!data) return null;
-    return mapUserFromAPI(data);
-  } catch (error) {
-    console.error('Error fetching user:', error);
-    return null;
-  }
+  const { data } = await getClient().models.User.get({ id: userId })
+  return toAppUser(data as Record<string, unknown> | null)
 }
 
-export async function listUsers(filter?: any): Promise<User[]> {
-  try {
-    const { data } = await getClient().models.User.list(filter);
-    return (data || []).map(mapUserFromAPI);
-  } catch (error) {
-    console.error('Error listing users:', error);
-    return [];
-  }
-}
-
-export async function createUser(input: Partial<User>): Promise<User | null> {
-  try {
-    const { data } = await getClient().models.User.create({
-      id: input.id,
-      email: input.email || '',
-      name: input.name || '',
-      username: input.username || input.email?.split('@')[0] || '',
-      bio: input.bio,
-      avatar: input.avatar,
-      location: input.location,
-      skills: input.skills || [],
-      interests: input.interests || [],
-      role: normalizeUserRole(input.role),
-    });
-    if (!data) return null;
-    return mapUserFromAPI(data);
-  } catch (error) {
-    console.error('Error creating user:', error);
-    return null;
-  }
+export async function createUser(params: CreateUserParams | Partial<User>): Promise<User> {
+  const p = params as Record<string, unknown>
+  const id = (p.id as string) || crypto.randomUUID?.() || `user-${Date.now()}`
+  const role = ((p.role as string) || 'MENTEE').toUpperCase()
+  const validRole = role === 'MENTOR' || role === 'MENTEE' || role === 'BOTH' ? role : 'MENTEE'
+  const { data, errors } = await getClient().models.User.create({
+    id,
+    username: (p.username as string) || (p.email as string)?.toString().split('@')[0] || 'user',
+    email: (p.email as string) || '',
+    name: (p.name as string) || '',
+    title: p.title as string | undefined,
+    role: validRole as 'MENTOR' | 'MENTEE' | 'BOTH',
+    bio: p.bio as string | undefined,
+    avatar: p.avatar as string | undefined,
+    location: p.location as string | undefined,
+    skills: p.skills as string[] | undefined,
+    interests: p.interests as string[] | undefined
+  })
+  if (errors?.length) throw new Error(errors.map(e => e.message).join(', '))
+  return toAppUser(data as Record<string, unknown>)!
 }
 
 export async function updateUser(userId: string, updates: Partial<User>): Promise<User | null> {
-  try {
-    // Normalize role to match schema enum
-    const normalizedUpdates: any = { ...updates };
-    if (normalizedUpdates.role) {
-      normalizedUpdates.role = normalizeUserRole(normalizedUpdates.role);
-    }
-    
-    const { data } = await getClient().models.User.update({
-      id: userId,
-      ...normalizedUpdates,
-    });
-    if (!data) return null;
-    return mapUserFromAPI(data);
-  } catch (error) {
-    console.error('Error updating user:', error);
-    return null;
-  }
+  const u = updates as Record<string, unknown>
+  const { data, errors } = await getClient().models.User.update({
+    id: userId,
+    ...(u.username != null && { username: u.username as string }),
+    ...(u.email != null && { email: u.email as string }),
+    ...(u.name != null && { name: u.name as string }),
+    ...(u.title !== undefined && { title: u.title as string }),
+    ...(u.role != null && { role: (u.role as string).toUpperCase() as 'MENTOR' | 'MENTEE' | 'BOTH' }),
+    ...(u.bio !== undefined && { bio: u.bio as string }),
+    ...(u.avatar !== undefined && { avatar: u.avatar as string }),
+    ...(u.location !== undefined && { location: u.location as string }),
+    ...(u.skills !== undefined && { skills: u.skills as string[] }),
+    ...(u.interests !== undefined && { interests: u.interests as string[] })
+  })
+  if (errors?.length) return null
+  return toAppUser(data as Record<string, unknown>)
 }
 
-// ==================== SESSION API ====================
-
-export async function getSession(sessionId: string): Promise<Session | null> {
-  try {
-    const { data } = await getClient().models.Session.get({ id: sessionId });
-    if (!data) return null;
-    return mapSessionFromAPI(data);
-  } catch (error) {
-    console.error('Error fetching session:', error);
-    return null;
-  }
-}
-
-export async function listSessions(filter?: any): Promise<Session[]> {
-  try {
-    const { data } = await getClient().models.Session.list(filter);
-    const sessions = (data || []).map(mapSessionFromAPI);
-    
-    // Populate mentor and mentee user objects
-    const sessionsWithUsers = await Promise.all(
-      sessions.map(async (session) => {
-        const [mentor, mentee] = await Promise.all([
-          getUser(session.mentorId),
-          getUser(session.menteeId)
-        ]);
-        return {
-          ...session,
-          mentor: mentor || undefined,
-          mentee: mentee || undefined,
-        };
-      })
-    );
-    
-    return sessionsWithUsers;
-  } catch (error) {
-    console.error('Error listing sessions:', error);
-    return [];
-  }
-}
-
-export async function listSessionsForUser(userId: string, role: 'mentor' | 'mentee'): Promise<Session[]> {
-  try {
-    const filter = role === 'mentor' 
-      ? { filter: { mentorId: { eq: userId } } }
-      : { filter: { menteeId: { eq: userId } } };
-    const { data } = await getClient().models.Session.list(filter);
-    const sessions = (data || []).map(mapSessionFromAPI);
-    
-    // Populate mentor and mentee user objects
-    const sessionsWithUsers = await Promise.all(
-      sessions.map(async (session) => {
-        const [mentor, mentee] = await Promise.all([
-          getUser(session.mentorId),
-          getUser(session.menteeId)
-        ]);
-        return {
-          ...session,
-          mentor: mentor || undefined,
-          mentee: mentee || undefined,
-        };
-      })
-    );
-    
-    return sessionsWithUsers;
-  } catch (error) {
-    console.error('Error listing sessions for user:', error);
-    return [];
-  }
-}
-
-export async function createSession(input: Partial<Session>): Promise<Session | null> {
-  try {
-    // Normalize status to uppercase
-    let status: 'PENDING' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED' = 'PENDING';
-    if (input.status) {
-      const statusUpper = input.status.toUpperCase();
-      if (statusUpper === 'PENDING' || statusUpper === 'CONFIRMED' || statusUpper === 'COMPLETED' || statusUpper === 'CANCELLED') {
-        status = statusUpper as typeof status;
-      }
-    }
-    
-    const { data } = await getClient().models.Session.create({
-      mentorId: input.mentorId || '',
-      menteeId: input.menteeId || '',
-      date: input.date || new Date().toISOString(),
-      duration: input.duration || 60,
-      status,
-      notes: input.notes,
-      meetingLink: input.meetingLink,
-    });
-    if (!data) return null;
-    
-    const session = mapSessionFromAPI(data);
-    
-    // Populate mentor and mentee user objects
-    const [mentor, mentee] = await Promise.all([
-      getUser(session.mentorId),
-      getUser(session.menteeId)
-    ]);
-    
-    return {
-      ...session,
-      mentor: mentor || undefined,
-      mentee: mentee || undefined,
-    };
-  } catch (error) {
-    console.error('Error creating session:', error);
-    return null;
-  }
-}
-
-export async function updateSession(sessionId: string, updates: Partial<Session>): Promise<Session | null> {
-  try {
-    // Normalize status to uppercase if provided
-    const normalizedUpdates: any = { ...updates };
-    if (normalizedUpdates.status) {
-      const statusUpper = normalizedUpdates.status.toUpperCase();
-      if (statusUpper === 'PENDING' || statusUpper === 'CONFIRMED' || statusUpper === 'COMPLETED' || statusUpper === 'CANCELLED') {
-        normalizedUpdates.status = statusUpper;
-      } else {
-        delete normalizedUpdates.status;
-      }
-    }
-    
-    const { data } = await getClient().models.Session.update({
-      id: sessionId,
-      ...normalizedUpdates,
-    });
-    if (!data) return null;
-    return mapSessionFromAPI(data);
-  } catch (error) {
-    console.error('Error updating session:', error);
-    return null;
-  }
-}
-
-// ==================== GOAL API ====================
-
-export async function getGoal(goalId: string): Promise<Goal | null> {
-  try {
-    const { data } = await getClient().models.Goal.get({ id: goalId });
-    if (!data) return null;
-    return mapGoalFromAPI(data);
-  } catch (error) {
-    console.error('Error fetching goal:', error);
-    return null;
-  }
-}
-
-export async function listGoals(userId?: string): Promise<Goal[]> {
-  try {
-    const filter = userId ? { filter: { userId: { eq: userId } } } : undefined;
-    const { data } = await getClient().models.Goal.list(filter);
-    return (data || []).map(mapGoalFromAPI);
-  } catch (error) {
-    console.error('Error listing goals:', error);
-    return [];
-  }
+export async function listUsers(): Promise<User[]> {
+  const { data } = await getClient().models.User.list()
+  return (data || []).map(d => toAppUser(d as Record<string, unknown>)).filter((u): u is User => u != null)
 }
 
 export async function listMentors(): Promise<User[]> {
-  try {
-    // Note: Filtering by role may not be supported in current schema
-    // For now, list all users and filter client-side
-    const { data } = await getClient().models.User.list();
-    const allUsers = (data || []).map(mapUserFromAPI);
-    return allUsers.filter(user => {
-      const role = user.role?.toLowerCase();
-      return role === 'mentor' || role === 'both';
-    });
-  } catch (error) {
-    console.error('Error listing mentors:', error);
-    return [];
-  }
+  const all = await listUsers()
+  return all.filter(u => {
+    const r = (u.role || '').toString().toLowerCase()
+    return r === 'mentor' || r === 'both'
+  })
 }
 
-export async function createGoal(input: Partial<Goal>): Promise<Goal | null> {
-  try {
-    // Note: Status field doesn't exist in current Goal schema
-    const { data } = await getClient().models.Goal.create({
-      userId: input.userId || '',
-      title: input.title || '',
-      description: input.description,
-      category: input.category,
-      progress: input.progress || 0,
-      dueDate: input.dueDate,
-      // status field removed - not in schema
-    });
-    if (!data) return null;
-    return mapGoalFromAPI(data);
-  } catch (error) {
-    console.error('Error creating goal:', error);
-    return null;
+export async function createSession(session: Session): Promise<Session> {
+  const dateStr = typeof session.date === 'string' ? session.date : new Date(session.date).toISOString()
+  const { data, errors } = await getClient().models.Session.create({
+    mentorId: session.mentorId,
+    menteeId: session.menteeId,
+    date: dateStr,
+    duration: session.duration ?? 60,
+    status: (session.status?.toUpperCase() as 'PENDING' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED') || 'PENDING',
+    notes: session.notes ?? session.topic ?? undefined,
+    meetingLink: session.meetingLink
+  })
+  if (errors?.length) throw new Error(errors.map(e => e.message).join(', '))
+  const [mentor, mentee] = await Promise.all([getUser(session.mentorId), getUser(session.menteeId)])
+  return toAppSession(data as Record<string, unknown>, mentor, mentee)!
+}
+
+export async function updateSession(sessionId: string, updates: Partial<Session>): Promise<Session | null> {
+  const u = updates as Record<string, unknown>
+  const payload: { id: string; status?: string; notes?: string; meetingLink?: string } = { id: sessionId }
+  if (u.status != null) payload.status = (u.status as string).toUpperCase()
+  if (u.notes !== undefined) payload.notes = u.notes as string
+  if (u.meetingLink !== undefined) payload.meetingLink = u.meetingLink as string
+  const statusPayload = payload.status as 'PENDING' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED' | undefined
+  const { data, errors } = await getClient().models.Session.update({
+    id: sessionId,
+    ...(statusPayload && { status: statusPayload }),
+    ...(payload.notes !== undefined && { notes: payload.notes }),
+    ...(payload.meetingLink !== undefined && { meetingLink: payload.meetingLink })
+  })
+  if (errors?.length) {
+    const msg = errors.map((e: { message?: string }) => e.message || String(e)).join(', ')
+    throw new Error(msg || 'Failed to update session')
   }
+  const d = data as Record<string, unknown>
+  const [mentor, mentee] = await Promise.all([getUser(d.mentorId as string), getUser(d.menteeId as string)])
+  const session = toAppSession(d, mentor, mentee)
+  if (!session) return null
+  const merged = { ...session, ...updates }
+  if (merged.status) merged.status = (merged.status as string).toUpperCase() as Session['status']
+  return merged
+}
+
+export async function listSessions(): Promise<Session[]> {
+  const { data } = await getClient().models.Session.list()
+  const users = new Map<string, User>()
+  const load = async (id: string) => { if (!users.has(id)) users.set(id, (await getUser(id))!) }
+  for (const s of data || []) {
+    const r = s as Record<string, unknown>
+    await load(r.mentorId as string)
+    await load(r.menteeId as string)
+  }
+  return (data || []).map(s => toAppSession(
+    s as Record<string, unknown>,
+    users.get((s as Record<string, unknown>).mentorId as string),
+    users.get((s as Record<string, unknown>).menteeId as string)
+  )).filter((x): x is Session => x != null)
+}
+
+export async function listSessionsForUser(userId: string, role: 'mentor' | 'mentee'): Promise<Session[]> {
+  const filterField = role === 'mentor' ? 'mentorId' : 'menteeId'
+  const { data } = await getClient().models.Session.list({ filter: { [filterField]: { eq: userId } } })
+  const users = new Map<string, User>()
+  const load = async (id: string) => { if (!users.has(id)) users.set(id, (await getUser(id))!) }
+  for (const s of data || []) {
+    const r = s as Record<string, unknown>
+    await load(r.mentorId as string)
+    await load(r.menteeId as string)
+  }
+  return (data || []).map(s => toAppSession(
+    s as Record<string, unknown>,
+    users.get((s as Record<string, unknown>).mentorId as string),
+    users.get((s as Record<string, unknown>).menteeId as string)
+  )).filter((x): x is Session => x != null)
+}
+
+export async function getMentorAvailability(mentorId: string): Promise<MentorAvailability | null> {
+  if (mentorAvailabilityCache[mentorId]) return mentorAvailabilityCache[mentorId]
+  const { data } = await getClient().models.MentorAvailability.list({ filter: { mentorId: { eq: mentorId } } })
+  const record = (data || [])[0] as Record<string, unknown> | undefined
+  if (!record) return null
+  const parsed: MentorAvailability = {
+    mentorId: record.mentorId as string,
+    slots: JSON.parse((record.slots as string) || '[]'),
+    timezone: record.timezone as string | undefined,
+    updatedAt: record.updatedAt as string | undefined
+  }
+  mentorAvailabilityCache[mentorId] = parsed
+  return parsed
+}
+
+export async function updateMentorAvailability(mentorId: string, availability: MentorAvailability): Promise<MentorAvailability> {
+  const updated = { ...availability, mentorId, updatedAt: new Date().toISOString() }
+  const slotsJson = JSON.stringify(updated.slots)
+  const { data: existing } = await getClient().models.MentorAvailability.list({ filter: { mentorId: { eq: mentorId } } })
+  const existingRecord = (existing || [])[0] as Record<string, unknown> | undefined
+  if (existingRecord?.id) {
+    await getClient().models.MentorAvailability.update({
+      id: existingRecord.id as string,
+      slots: slotsJson,
+      timezone: updated.timezone
+    })
+  } else {
+    await getClient().models.MentorAvailability.create({
+      mentorId,
+      slots: slotsJson,
+      timezone: updated.timezone
+    })
+  }
+  mentorAvailabilityCache[mentorId] = updated
+  return updated
+}
+
+export async function createGoal(goal: Goal): Promise<Goal> {
+  const { data, errors } = await getClient().models.Goal.create({
+    userId: goal.userId,
+    title: goal.title,
+    description: goal.description,
+    category: goal.category,
+    progress: goal.progress,
+    dueDate: goal.dueDate
+  })
+  if (errors?.length) throw new Error(errors.map(e => e.message).join(', '))
+  return toAppGoal(data as Record<string, unknown>)!
 }
 
 export async function updateGoal(goalId: string, updates: Partial<Goal>): Promise<Goal | null> {
-  try {
-    // Filter out status field as it was removed from schema
-    const { status, ...validUpdates } = updates;
-    const { data } = await getClient().models.Goal.update({
-      id: goalId,
-      ...validUpdates,
-    });
-    if (!data) return null;
-    return mapGoalFromAPI(data);
-  } catch (error) {
-    console.error('Error updating goal:', error);
-    return null;
-  }
+  const u = updates as Record<string, unknown>
+  const { data, errors } = await getClient().models.Goal.update({
+    id: goalId,
+    ...(u.title != null && { title: u.title as string }),
+    ...(u.description !== undefined && { description: u.description as string }),
+    ...(u.category !== undefined && { category: u.category as string }),
+    ...(u.progress !== undefined && { progress: u.progress as number }),
+    ...(u.dueDate !== undefined && { dueDate: u.dueDate as string })
+  })
+  if (errors?.length) return null
+  return toAppGoal(data as Record<string, unknown>)
 }
 
 export async function deleteGoal(goalId: string): Promise<boolean> {
-  try {
-    // First, try to delete associated action plan if it exists
-    // We'll need to find it by checking action plans
-    const { errors } = await getClient().models.Goal.delete({ id: goalId });
-    if (errors && errors.length > 0) {
-      console.error('Error deleting goal:', errors);
-      return false;
-    }
-    return true;
-  } catch (error) {
-    console.error('Error deleting goal:', error);
-    return false;
-  }
+  const { errors } = await getClient().models.Goal.delete({ id: goalId })
+  return !errors?.length
 }
 
-// ==================== HABIT API ====================
-
-export async function listHabits(userId?: string, goalId?: string): Promise<Habit[]> {
-  try {
-    const filterObj: any = {};
-    if (userId) filterObj.userId = { eq: userId };
-    if (goalId) filterObj.goalId = { eq: goalId };
-    const filter = Object.keys(filterObj).length > 0 ? { filter: filterObj } : undefined;
-    const { data } = await getClient().models.Todo.list(filter);
-    // Note: Habits are stored as Todos in current schema - this needs to be updated when schema changes
-    return (data || []).map(mapHabitFromAPI);
-  } catch (error) {
-    console.error('Error listing habits:', error);
-    return [];
-  }
+export async function listGoals(userId: string): Promise<Goal[]> {
+  const { data } = await getClient().models.Goal.list({ filter: { userId: { eq: userId } } })
+  return (data || []).map(d => toAppGoal(d as Record<string, unknown>)).filter((g): g is Goal => g != null)
 }
 
-export async function createHabit(input: Partial<Habit> & { userId?: string }): Promise<Habit | null> {
-  try {
-    // Note: Using Todo model temporarily - needs schema update
-    // Habit type doesn't have userId, but Todo model requires it
-    const userId = input.userId || '';
-    if (!userId) {
-      console.error('Error creating habit: userId is required');
-      return null;
-    }
-    
-    // Use title as text for Todo model (since Todo.text is required)
-    const text = input.title || input.description || '';
-    if (!text) {
-      console.error('Error creating habit: title or description is required');
-      return null;
-    }
-    
-    const { data } = await getClient().models.Todo.create({
-      userId,
-      goalId: input.goalId,
-      text,
-      done: false,
-    });
-    if (!data) return null;
-    return mapHabitFromAPI(data);
-  } catch (error) {
-    console.error('Error creating habit:', error);
-    return null;
-  }
+export async function createHabit(habit: Habit): Promise<Habit> {
+  // Backend has ActionItem, not Habit. Return habit as-is for now; consider mapping to ActionItem later.
+  return { ...habit, id: habit.id || `habit-${Date.now()}` }
 }
 
-// ==================== REFLECTION API ====================
-
-export async function getReflection(reflectionId: string): Promise<Reflection | null> {
-  try {
-    const { data } = await getClient().models.Reflection.get({ id: reflectionId });
-    if (!data) return null;
-    return mapReflectionFromAPI(data);
-  } catch (error) {
-    console.error('Error fetching reflection:', error);
-    return null;
-  }
+export async function updateHabit(habitId: string, updates: Partial<Habit>): Promise<Habit | null> {
+  return { id: habitId, ...updates } as Habit
 }
 
-export async function listReflections(userId?: string): Promise<Reflection[]> {
-  try {
-    const filter = userId ? { filter: { userId: { eq: userId } } } : undefined;
-    const { data } = await getClient().models.Reflection.list(filter);
-    return (data || []).map(mapReflectionFromAPI);
-  } catch (error) {
-    console.error('Error listing reflections:', error);
-    return [];
-  }
+export async function listHabits(_userId: string): Promise<Habit[]> {
+  return []
 }
 
-export async function createReflection(input: Partial<Reflection>): Promise<Reflection | null> {
-  try {
-    const { data } = await getClient().models.Reflection.create({
-      userId: input.userId || '',
-      date: input.date || new Date().toISOString().split('T')[0],
-      mood: input.mood,
-      moodScore: input.moodScore,
-      text: input.text || '',
-      sharedWithMentorId: input.sharedWithMentorId,
-    });
-    if (!data) return null;
-    return mapReflectionFromAPI(data);
-  } catch (error) {
-    console.error('Error creating reflection:', error);
-    return null;
-  }
+export async function createReflection(reflection: Reflection): Promise<Reflection> {
+  const { data, errors } = await getClient().models.Reflection.create({
+    userId: reflection.userId,
+    date: reflection.date,
+    mood: reflection.mood,
+    moodScore: reflection.moodScore,
+    text: reflection.text ?? reflection.content as string ?? '',
+    sharedWithMentorId: reflection.sharedWithMentorId,
+    mentorFeedback: typeof reflection.mentorFeedback === 'string' ? reflection.mentorFeedback : undefined
+  })
+  if (errors?.length) throw new Error(errors.map(e => e.message).join(', '))
+  return toAppReflection(data as Record<string, unknown>)!
 }
 
-export async function updateReflection(reflectionId: string, updates: Partial<Reflection>): Promise<Reflection | null> {
-  try {
-    const { data } = await getClient().models.Reflection.update({
-      id: reflectionId,
-      ...updates,
-    });
-    if (!data) return null;
-    return mapReflectionFromAPI(data);
-  } catch (error) {
-    console.error('Error updating reflection:', error);
-    return null;
-  }
+export async function listReflections(userId: string): Promise<Reflection[]> {
+  const { data } = await getClient().models.Reflection.list({ filter: { userId: { eq: userId } } })
+  return (data || []).map(d => toAppReflection(d as Record<string, unknown>)).filter((r): r is Reflection => r != null)
 }
 
-export async function deleteReflection(reflectionId: string): Promise<boolean> {
-  try {
-    const { errors } = await getClient().models.Reflection.delete({ id: reflectionId });
-    if (errors && errors.length > 0) {
-      console.error('Error deleting reflection:', errors);
-      return false;
-    }
-    return true;
-  } catch (error) {
-    console.error('Error deleting reflection:', error);
-    return false;
-  }
+export async function createJourney(journey: Journey): Promise<Journey> {
+  const { data, errors } = await getClient().models.Journey.create({
+    userId: journey.userId,
+    goalId: journey.goalId,
+    mood: journey.mood,
+    text: journey.text,
+    visibility: (journey.visibility?.toUpperCase() as 'EVERYONE' | 'MENTORS' | 'PRIVATE' | 'SELECTED') || 'EVERYONE',
+    selectedMentorIds: journey.selectedMentorIds,
+    tags: journey.tags
+  })
+  if (errors?.length) throw new Error(errors.map(e => e.message).join(', '))
+  return toAppJourney(data as Record<string, unknown>)!
 }
 
-// ==================== EVENT API ====================
-
-export async function listEvents(): Promise<Event[]> {
-  try {
-    // Note: Events not in current schema - will need to add
-    // For now, return empty array
-    return [];
-  } catch (error) {
-    console.error('Error listing events:', error);
-    return [];
-  }
+async function listJourneyReactionsByJourneyId(journeyId: string): Promise<Journey['reactions']> {
+  const { data } = await getClient().models.JourneyReaction.list({ filter: { journeyId: { eq: journeyId } } })
+  return ((data || []).map((d: Record<string, unknown>) => ({
+    id: d.id as string,
+    userId: d.userId as string,
+    type: ((d.type as string)?.toUpperCase() || 'HEART') as 'HEART' | 'CELEBRATE' | 'SUPPORT'
+  })) as Journey['reactions'])
 }
 
-// ==================== ACTION PLAN API ====================
-
-export async function createActionPlan(input: {
-  creatorId: string;
-  assigneeId: string;
-  title: string;
-  description?: string;
-  startDate?: string;
-  endDate?: string;
-  status?: 'ACTIVE' | 'COMPLETED' | 'ARCHIVED';
-}): Promise<any> {
-  try {
-    const { data } = await getClient().models.ActionPlan.create({
-      creatorId: input.creatorId,
-      assigneeId: input.assigneeId,
-      title: input.title,
-      description: input.description,
-      startDate: input.startDate,
-      endDate: input.endDate,
-      status: input.status || 'ACTIVE',
-    });
-    return data;
-  } catch (error) {
-    console.error('Error creating action plan:', error);
-    return null;
-  }
+async function listJourneyCommentsByJourneyId(journeyId: string): Promise<Journey['comments']> {
+  const { data } = await getClient().models.JourneyComment.list({ filter: { journeyId: { eq: journeyId } } })
+  return (data || []).map((d: Record<string, unknown>) => ({
+    id: d.id as string,
+    userId: d.userId as string,
+    text: (d.text as string) || '',
+    createdAt: (d.createdAt as string) || new Date().toISOString()
+  }))
 }
-
-export async function createActionItem(input: {
-  planId: string;
-  title: string;
-  description?: string;
-  type?: 'DO' | 'AVOID';
-  frequency?: 'DAILY' | 'WEEKLY' | 'ONE_TIME';
-  status?: 'ACTIVE' | 'PAUSED' | 'COMPLETED';
-}): Promise<any> {
-  try {
-    const { data } = await getClient().models.ActionItem.create({
-      planId: input.planId,
-      title: input.title,
-      description: input.description,
-      type: input.type || 'DO',
-      frequency: input.frequency || 'DAILY',
-      status: input.status || 'ACTIVE',
-    });
-    return data;
-  } catch (error) {
-    console.error('Error creating action item:', error);
-    return null;
-  }
-}
-
-export async function listActionPlans(assigneeId?: string, creatorId?: string): Promise<any[]> {
-  try {
-    // Since users create plans for themselves, we can filter by assigneeId
-    // If both are provided and different, we'd need OR logic, but for now we'll prioritize assigneeId
-    const filterObj: any = {};
-    if (assigneeId) {
-      filterObj.assigneeId = { eq: assigneeId };
-    } else if (creatorId) {
-      filterObj.creatorId = { eq: creatorId };
-    }
-    
-    const filter = Object.keys(filterObj).length > 0 ? { filter: filterObj } : undefined;
-    const { data } = await getClient().models.ActionPlan.list(filter);
-    return data || [];
-  } catch (error) {
-    console.error('Error listing action plans:', error);
-    return [];
-  }
-}
-
-export async function getActionPlan(planId: string): Promise<any | null> {
-  try {
-    const { data } = await getClient().models.ActionPlan.get({ id: planId });
-    return data || null;
-  } catch (error) {
-    console.error('Error getting action plan:', error);
-    return null;
-  }
-}
-
-export async function updateActionPlan(planId: string, updates: {
-  title?: string;
-  description?: string;
-  startDate?: string;
-  endDate?: string;
-  status?: 'ACTIVE' | 'COMPLETED' | 'ARCHIVED';
-}): Promise<any | null> {
-  try {
-    const { data } = await getClient().models.ActionPlan.update({
-      id: planId,
-      ...updates,
-    });
-    return data || null;
-  } catch (error) {
-    console.error('Error updating action plan:', error);
-    return null;
-  }
-}
-
-export async function listActionItems(planId: string): Promise<any[]> {
-  try {
-    const { data } = await getClient().models.ActionItem.list({
-      filter: { planId: { eq: planId } },
-    });
-    return data || [];
-  } catch (error) {
-    console.error('Error listing action items:', error);
-    return [];
-  }
-}
-
-export async function updateActionItem(itemId: string, updates: {
-  title?: string;
-  description?: string;
-  type?: 'DO' | 'AVOID';
-  frequency?: 'DAILY' | 'WEEKLY' | 'ONE_TIME';
-  status?: 'ACTIVE' | 'PAUSED' | 'COMPLETED';
-}): Promise<any | null> {
-  try {
-    const { data } = await getClient().models.ActionItem.update({
-      id: itemId,
-      ...updates,
-    });
-    return data || null;
-  } catch (error) {
-    console.error('Error updating action item:', error);
-    return null;
-  }
-}
-
-export async function deleteActionItem(itemId: string): Promise<boolean> {
-  try {
-    const { errors } = await getClient().models.ActionItem.delete({ id: itemId });
-    if (errors && errors.length > 0) {
-      console.error('Error deleting action item:', errors);
-      return false;
-    }
-    return true;
-  } catch (error) {
-    console.error('Error deleting action item:', error);
-    return false;
-  }
-}
-
-export async function deleteActionPlan(planId: string): Promise<boolean> {
-  try {
-    console.log('deleteActionPlan: Starting deletion of plan', planId)
-    
-    // First, delete all action items in the plan
-    const actionItems = await listActionItems(planId)
-    console.log('deleteActionPlan: Found', actionItems.length, 'action items to delete')
-    
-    if (actionItems.length > 0) {
-      // Delete items one by one to ensure we catch any errors
-      for (const item of actionItems) {
-        try {
-          console.log('deleteActionPlan: Deleting action item', item.id)
-          await deleteActionItem(item.id)
-        } catch (itemError) {
-          console.error('deleteActionPlan: Error deleting action item', item.id, itemError)
-          // Continue with other items even if one fails
-        }
-      }
-      console.log('deleteActionPlan: Finished deleting action items')
-    }
-    
-    // Always try to delete the action plan itself, even if some items failed
-    console.log('deleteActionPlan: Deleting action plan', planId)
-    const { data, errors } = await getClient().models.ActionPlan.delete({ id: planId })
-    if (errors && errors.length > 0) {
-      console.error('deleteActionPlan: Errors deleting plan', errors)
-      throw new Error(`Failed to delete action plan: ${errors.map(e => e.message).join(', ')}`)
-    }
-    console.log('deleteActionPlan: Successfully deleted action plan', planId, data)
-    return true
-  } catch (error) {
-    console.error('Error deleting action plan:', error)
-    // If plan deletion fails, try to delete remaining items
-    try {
-      const remainingItems = await listActionItems(planId)
-      if (remainingItems.length > 0) {
-        console.log('deleteActionPlan: Plan deletion failed, cleaning up remaining items')
-        for (const item of remainingItems) {
-          try {
-            await deleteActionItem(item.id)
-          } catch (itemError) {
-            console.error('deleteActionPlan: Error cleaning up item', item.id, itemError)
-          }
-        }
-      }
-    } catch (cleanupError) {
-      console.error('deleteActionPlan: Error during cleanup', cleanupError)
-    }
-    return false
-  }
-}
-
-// ==================== VENUE API ====================
-
-export async function listVenues(): Promise<Venue[]> {
-  try {
-    // Note: Venues not in current schema - will need to add
-    // For now, return empty array
-    return [];
-  } catch (error) {
-    console.error('Error listing venues:', error);
-    return [];
-  }
-}
-
-// ==================== JOURNEY API ====================
 
 export async function getJourney(journeyId: string): Promise<Journey | null> {
-  try {
-    const { data } = await getClient().models.Journey.get({ id: journeyId });
-    if (!data) return null;
-
-    // Fetch related data using relationships
-    const [user, reactions, commentsResponse] = await Promise.all([
-      data.user ? data.user() : Promise.resolve({ data: null }),
-      data.reactions(),
-      data.comments()
-    ]);
-
-    // Fetch user for each comment
-    const comments = await Promise.all(
-      (commentsResponse.data || []).map(async (comment: any) => {
-        const commentUser = comment.user ? await comment.user() : { data: null };
-        return {
-          ...comment,
-          user: commentUser.data || undefined
-        };
-      })
-    );
-
-    return mapJourneyFromAPI({
-      ...data,
-      user: user.data || undefined,
-      reactions: reactions.data || [],
-      comments: comments
-    });
-  } catch (error) {
-    console.error('Error fetching journey:', error);
-    return null;
-  }
+  const { data } = await getClient().models.Journey.get({ id: journeyId })
+  if (!data) return null
+  const [reactions, comments] = await Promise.all([
+    listJourneyReactionsByJourneyId(journeyId),
+    listJourneyCommentsByJourneyId(journeyId)
+  ])
+  return toAppJourney(data as Record<string, unknown>, reactions, comments)
 }
 
-export async function listJourneys(userId?: string): Promise<Journey[]> {
-  try {
-    const filter = userId ? { filter: { userId: { eq: userId } } } : undefined;
-    const { data } = await getClient().models.Journey.list(filter);
-
-    // Get all journeys with user, reactions, and comments using relationships
-    const journeysWithData = await Promise.all(
-      (data || []).map(async (journey) => {
-        const [user, reactions, commentsResponse] = await Promise.all([
-          journey.user ? journey.user() : Promise.resolve({ data: null }),
-          journey.reactions(),
-          journey.comments()
-        ]);
-
-        // Fetch user for each comment
-        const comments = await Promise.all(
-          (commentsResponse.data || []).map(async (comment: any) => {
-            const commentUser = comment.user ? await comment.user() : { data: null };
-            return {
-              ...comment,
-              user: commentUser.data || undefined
-            };
-          })
-        );
-
-        return mapJourneyFromAPI({
-          ...journey,
-          user: user.data || undefined,
-          reactions: reactions.data || [],
-          comments: comments
-        });
-      })
-    );
-
-    return journeysWithData;
-  } catch (error) {
-    console.error('Error listing journeys:', error);
-    return [];
-  }
+export async function listJourneys(): Promise<Journey[]> {
+  const { data } = await getClient().models.Journey.list()
+  const list = data || []
+  if (list.length === 0) return []
+  const ids = list.map((d: Record<string, unknown>) => d.id as string)
+  const [allReactions, allComments] = await Promise.all([
+    Promise.all(ids.map(id => listJourneyReactionsByJourneyId(id))),
+    Promise.all(ids.map(id => listJourneyCommentsByJourneyId(id)))
+  ])
+  const reactionsByJourney = Object.fromEntries(ids.map((id, i) => [id, allReactions[i]]))
+  const commentsByJourney = Object.fromEntries(ids.map((id, i) => [id, allComments[i]]))
+  return list.map((d: Record<string, unknown>) => {
+    const id = d.id as string
+    return toAppJourney(d, reactionsByJourney[id], commentsByJourney[id])
+  }).filter((j): j is Journey => j != null)
 }
 
-export async function createJourney(input: Partial<Journey>): Promise<Journey | null> {
-  try {
-    const { data } = await getClient().models.Journey.create({
-      userId: input.userId || '',
-      goalId: input.goalId,
-      mood: input.mood,
-      text: input.text || '',
-      visibility: input.visibility?.toUpperCase() as 'EVERYONE' | 'MENTORS' | 'PRIVATE' | 'SELECTED',
-      selectedMentorIds: input.selectedMentorIds || [],
-      tags: input.tags || [],
-    });
-    if (!data) return null;
-
-    // Fetch user relationship
-    const user = data.user ? await data.user() : { data: null };
-
-    return mapJourneyFromAPI({
-      ...data,
-      user: user.data || input.user || undefined,
-      reactions: [],
-      comments: []
-    });
-  } catch (error) {
-    console.error('Error creating journey:', error);
-    return null;
-  }
-}
-
-export async function updateJourney(journeyId: string, updates: Partial<Journey>): Promise<Journey | null> {
-  try {
-    const normalizedUpdates: any = { ...updates };
-    if (normalizedUpdates.visibility) {
-      normalizedUpdates.visibility = normalizedUpdates.visibility.toUpperCase();
-    }
-
-    const { data } = await getClient().models.Journey.update({
-      id: journeyId,
-      ...normalizedUpdates,
-    });
-    if (!data) return null;
-
-    // Fetch user relationship
-    const user = data.user ? await data.user() : { data: null };
-
-    return mapJourneyFromAPI({
-      ...data,
-      user: user.data || undefined
-    });
-  } catch (error) {
-    console.error('Error updating journey:', error);
-    return null;
-  }
-}
-
-export async function deleteJourney(journeyId: string): Promise<boolean> {
-  try {
-    const { errors } = await getClient().models.Journey.delete({ id: journeyId });
-    if (errors && errors.length > 0) {
-      console.error('Error deleting journey:', errors);
-      return false;
-    }
-    return true;
-  } catch (error) {
-    console.error('Error deleting journey:', error);
-    return false;
-  }
-}
-
-// ==================== JOURNEY REACTION API ====================
-
-export async function listJourneyReactions(journeyId: string): Promise<JourneyReaction[]> {
-  try {
-    // Use filter to query by journeyId - Amplify will use GSI automatically via belongsTo relationship
-    const { data } = await getClient().models.JourneyReaction.list({
-      filter: { journeyId: { eq: journeyId } }
-    });
-    return (data || []).map(mapJourneyReactionFromAPI);
-  } catch (error) {
-    console.error('Error listing journey reactions:', error);
-    return [];
-  }
-}
-
-export async function createJourneyReaction(input: { journeyId: string; userId: string; type: 'heart' | 'celebrate' | 'support' }): Promise<JourneyReaction | null> {
-  try {
-    const { data } = await getClient().models.JourneyReaction.create({
-      journeyId: input.journeyId,
-      userId: input.userId,
-      type: input.type.toUpperCase() as 'HEART' | 'CELEBRATE' | 'SUPPORT',
-    });
-    if (!data) return null;
-    return mapJourneyReactionFromAPI(data);
-  } catch (error) {
-    console.error('Error creating journey reaction:', error);
-    return null;
-  }
+export async function createJourneyReaction(params: { journeyId: string; userId: string; type: string }): Promise<unknown> {
+  const type = (params.type?.toUpperCase() || 'HEART') as 'HEART' | 'CELEBRATE' | 'SUPPORT'
+  const { data, errors } = await getClient().models.JourneyReaction.create({
+    journeyId: params.journeyId,
+    userId: params.userId,
+    type
+  })
+  if (errors?.length) throw new Error(errors.map(e => e.message).join(', '))
+  return data
 }
 
 export async function deleteJourneyReaction(reactionId: string): Promise<boolean> {
-  try {
-    const { errors } = await getClient().models.JourneyReaction.delete({ id: reactionId });
-    if (errors && errors.length > 0) {
-      console.error('Error deleting journey reaction:', errors);
-      return false;
-    }
-    return true;
-  } catch (error) {
-    console.error('Error deleting journey reaction:', error);
-    return false;
-  }
+  const { errors } = await getClient().models.JourneyReaction.delete({ id: reactionId })
+  return !errors?.length
 }
 
-// ==================== JOURNEY COMMENT API ====================
-
-export async function listJourneyComments(journeyId: string): Promise<JourneyComment[]> {
-  try {
-    // Use filter to query by journeyId - Amplify will use GSI automatically via belongsTo relationship
-    const { data } = await getClient().models.JourneyComment.list({
-      filter: { journeyId: { eq: journeyId } }
-    });
-    return (data || []).map(mapJourneyCommentFromAPI);
-  } catch (error) {
-    console.error('Error listing journey comments:', error);
-    return [];
-  }
+export async function createJourneyComment(params: { journeyId: string; userId: string; text: string }): Promise<unknown> {
+  const { data, errors } = await getClient().models.JourneyComment.create({
+    journeyId: params.journeyId,
+    userId: params.userId,
+    text: params.text
+  })
+  if (errors?.length) throw new Error(errors.map(e => e.message).join(', '))
+  return data
 }
 
-export async function createJourneyComment(input: { journeyId: string; userId: string; text: string }): Promise<JourneyComment | null> {
-  try {
-    const { data } = await getClient().models.JourneyComment.create({
-      journeyId: input.journeyId,
-      userId: input.userId,
-      text: input.text,
-    });
-    if (!data) return null;
-
-    // Fetch user relationship
-    const user = data.user ? await data.user() : { data: null };
-
-    return mapJourneyCommentFromAPI({
-      ...data,
-      user: user.data || undefined
-    });
-  } catch (error) {
-    console.error('Error creating journey comment:', error);
-    return null;
-  }
+export async function listEvents(): Promise<Event[]> {
+  return []
 }
 
-export async function deleteJourneyComment(commentId: string): Promise<boolean> {
-  try {
-    const { errors } = await getClient().models.JourneyComment.delete({ id: commentId });
-    if (errors && errors.length > 0) {
-      console.error('Error deleting journey comment:', errors);
-      return false;
-    }
-    return true;
-  } catch (error) {
-    console.error('Error deleting journey comment:', error);
-    return false;
-  }
+export async function loadServerData(_url: string): Promise<void> {
+  // No-op: data comes from Amplify backend only.
 }
 
-// ==================== MAPPING FUNCTIONS ====================
-
-function mapUserFromAPI(data: any): User {
-  return {
-    id: data.id,
-    username: data.username || data.email?.split('@')[0] || '',
-    email: data.email || '',
-    name: data.name || '',
-    role: normalizeUserRole(data.role),
-    bio: data.bio,
-    avatar: data.avatar,
-    location: data.location,
-    skills: data.skills || [],
-    interests: data.interests || [],
-    membershipTier: 'standard',
-    verified: false,
-    createdAt: data.createdAt || new Date().toISOString(),
-  };
+export async function createActionPlan(params: Partial<ActionPlan> & { creatorId: string; assigneeId: string; title: string }): Promise<ActionPlan> {
+  const { data, errors } = await getClient().models.ActionPlan.create({
+    creatorId: params.creatorId,
+    assigneeId: params.assigneeId,
+    title: params.title,
+    description: params.description,
+    startDate: params.startDate,
+    endDate: params.endDate,
+    status: (params.status as ActionPlan['status']) ?? 'ACTIVE'
+  })
+  if (errors?.length) throw new Error(errors.map(e => e.message).join(', '))
+  return { ...params, id: (data as { id: string }).id } as ActionPlan
 }
 
-function normalizeUserRole(role?: string): 'MENTOR' | 'MENTEE' | 'BOTH' {
-  const roleUpper = role?.toUpperCase();
-  if (roleUpper === 'MENTOR' || roleUpper === 'MENTEE' || roleUpper === 'BOTH') {
-    return roleUpper;
-  }
-  return 'MENTEE';
-}
-
-function mapSessionFromAPI(data: any): Session {
-  // Normalize status
-  let status: Session['status'] = 'pending';
-  if (data.status) {
-    const statusLower = data.status.toLowerCase();
-    if (statusLower === 'pending' || statusLower === 'confirmed' || statusLower === 'completed' || statusLower === 'cancelled') {
-      status = statusLower as Session['status'];
+export async function listActionPlans(creatorId: string, assigneeId: string): Promise<ActionPlan[]> {
+  const { data: byCreator } = await getClient().models.ActionPlan.list({ filter: { creatorId: { eq: creatorId } } })
+  const { data: byAssignee } = await getClient().models.ActionPlan.list({ filter: { assigneeId: { eq: assigneeId } } })
+  const seen = new Set<string>()
+  const out: ActionPlan[] = []
+  for (const d of [...(byCreator || []), ...(byAssignee || [])]) {
+    const r = d as Record<string, unknown>
+    if (r.id && !seen.has(r.id as string)) {
+      seen.add(r.id as string)
+      out.push({
+        id: r.id as string,
+        creatorId: r.creatorId as string,
+        assigneeId: r.assigneeId as string,
+        title: r.title as string,
+        description: r.description as string,
+        startDate: r.startDate as string,
+        endDate: r.endDate as string,
+        status: (r.status as string) as ActionPlan['status']
+      })
     }
   }
-  
-  // Determine session type: if meetingLink exists, it's virtual, otherwise in-person
-  const sessionType: 'virtual' | 'in-person' = data.meetingLink ? 'virtual' : 'in-person';
-  
-  return {
-    id: data.id,
-    mentorId: data.mentorId,
-    menteeId: data.menteeId,
-    type: sessionType,
-    date: data.date,
-    time: new Date(data.date).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-    duration: data.duration || 60,
-    status,
-    topic: data.notes || '',
-    notes: data.notes,
-    rejectionReason: data.rejectionReason,
-    meetingLink: data.meetingLink,
-    feedbackEligible: false,
-    feedbackSubmitted: false,
-  };
+  return out
 }
 
-function mapGoalFromAPI(data: any): Goal {
-  return {
-    id: data.id,
-    userId: data.userId,
-    title: data.title || '',
-    description: data.description,
-    category: data.category,
-    progress: data.progress || 0,
-    dueDate: data.dueDate,
-    status: (data.status?.toLowerCase() || 'draft') as Goal['status'],
-    createdAt: data.createdAt || new Date().toISOString(),
-    updatedAt: data.updatedAt || new Date().toISOString(),
-  };
-}
-
-function mapHabitFromAPI(data: any): Habit {
-  return {
-    id: data.id,
-    goalId: data.goalId || '',
-    title: data.text || data.title || 'Untitled Habit',
-    description: data.text || '',
-    frequency: 'daily',
-    duration: 2, // Default to 2 minutes for micro-habits
-    cue: {
-      time: undefined,
-      place: undefined,
-      context: undefined,
-    },
-    status: 'active',
-    createdAt: data.createdAt || new Date().toISOString(),
-    updatedAt: data.updatedAt || new Date().toISOString(),
-  };
-}
-
-function mapReflectionFromAPI(data: any): Reflection {
-  return {
-    id: data.id,
-    userId: data.userId,
-    date: data.date,
-    mood: (data.mood?.toUpperCase() || 'NEUTRAL') as Reflection['mood'],
-    text: data.text,
-    sharedWithMentorId: data.sharedWithMentorId,
-    mentorFeedback: data.mentorFeedback,
-    createdAt: data.createdAt || new Date().toISOString(),
-    updatedAt: data.updatedAt || new Date().toISOString(),
-  };
-}
-
-function mapJourneyFromAPI(data: any): Journey {
-  // Handle reactions - could be array, function (relationship), or undefined
-  let reactions: JourneyReaction[] = [];
-  if (Array.isArray(data.reactions)) {
-    reactions = data.reactions.map(mapJourneyReactionFromAPI);
-  } else if (data.reactions && typeof data.reactions === 'function') {
-    // It's a relationship function, we'll handle it in the calling code
-    reactions = [];
+export async function deleteActionPlan(planId: string): Promise<boolean> {
+  const items = await listActionItems(planId)
+  for (const item of items) {
+    await getClient().models.ActionItem.delete({ id: item.id })
   }
+  const { errors } = await getClient().models.ActionPlan.delete({ id: planId })
+  return !errors?.length
+}
 
-  // Handle comments - could be array, function (relationship), or undefined
-  let comments: JourneyComment[] = [];
-  if (Array.isArray(data.comments)) {
-    comments = data.comments.map(mapJourneyCommentFromAPI);
-  } else if (data.comments && typeof data.comments === 'function') {
-    // It's a relationship function, we'll handle it in the calling code
-    comments = [];
+export async function createActionItem(params: Partial<ActionItem> & { planId: string; title: string }): Promise<ActionItem> {
+  const { data, errors } = await getClient().models.ActionItem.create({
+    planId: params.planId,
+    title: params.title,
+    description: params.description,
+    type: params.type ?? 'DO',
+    frequency: params.frequency ?? 'DAILY',
+    status: params.status ?? 'ACTIVE'
+  })
+  if (errors?.length) throw new Error(errors.map(e => e.message).join(', '))
+  const r = data as Record<string, unknown>
+  return {
+    id: r.id as string,
+    planId: r.planId as string,
+    title: r.title as string,
+    description: r.description as string,
+    type: (r.type as ActionItem['type']) ?? 'DO',
+    frequency: (r.frequency as ActionItem['frequency']) ?? 'DAILY',
+    status: (r.status as ActionItem['status']) ?? 'ACTIVE'
   }
-
-  return {
-    id: data.id,
-    userId: data.userId,
-    user: data.user,
-    goalId: data.goalId,
-    mood: data.mood as Journey['mood'],
-    text: data.text || '',
-    visibility: (data.visibility?.toLowerCase() || 'private') as Journey['visibility'],
-    selectedMentorIds: data.selectedMentorIds || [],
-    tags: data.tags || [],
-    reactions,
-    comments,
-    createdAt: data.createdAt || new Date().toISOString(),
-    updatedAt: data.updatedAt || new Date().toISOString(),
-  };
 }
 
-function mapJourneyReactionFromAPI(data: any): JourneyReaction {
-  return {
-    id: data.id,
-    journeyId: data.journeyId,
-    userId: data.userId,
-    type: data.type?.toLowerCase() as 'heart' | 'celebrate' | 'support',
-    createdAt: data.createdAt || new Date().toISOString(),
-  };
+export async function updateActionItem(itemId: string, updates: Partial<ActionItem>): Promise<ActionItem | null> {
+  const u = updates as Record<string, unknown>
+  const { data, errors } = await getClient().models.ActionItem.update({
+    id: itemId,
+    ...(u.title != null && { title: u.title as string }),
+    ...(u.description !== undefined && { description: u.description as string }),
+    ...(u.type !== undefined && { type: u.type as 'DO' | 'AVOID' }),
+    ...(u.frequency !== undefined && { frequency: u.frequency as 'DAILY' | 'WEEKLY' | 'ONE_TIME' }),
+    ...(u.status !== undefined && { status: u.status as 'ACTIVE' | 'PAUSED' | 'COMPLETED' })
+  })
+  if (errors?.length) return null
+  const r = data as Record<string, unknown>
+  return r ? {
+    id: r.id as string,
+    planId: r.planId as string,
+    title: r.title as string,
+    description: r.description as string,
+    type: (r.type as ActionItem['type']) ?? 'DO',
+    frequency: (r.frequency as ActionItem['frequency']) ?? 'DAILY',
+    status: (r.status as ActionItem['status']) ?? 'ACTIVE'
+  } : null
 }
 
-function mapJourneyCommentFromAPI(data: any): JourneyComment {
-  return {
-    id: data.id,
-    journeyId: data.journeyId,
-    userId: data.userId,
-    user: data.user,
-    text: data.text || '',
-    createdAt: data.createdAt || new Date().toISOString(),
-  };
+export async function listActionItems(planId: string): Promise<ActionItem[]> {
+  const { data } = await getClient().models.ActionItem.list({ filter: { planId: { eq: planId } } })
+  return (data || []).map(d => {
+    const r = d as Record<string, unknown>
+    return {
+      id: r.id as string,
+      planId: r.planId as string,
+      title: r.title as string,
+      description: r.description as string,
+      type: (r.type as ActionItem['type']) ?? 'DO',
+      frequency: (r.frequency as ActionItem['frequency']) ?? 'DAILY',
+      status: (r.status as ActionItem['status']) ?? 'ACTIVE'
+    }
+  })
 }
 
+export async function deleteActionItem(itemId: string): Promise<boolean> {
+  const { errors } = await getClient().models.ActionItem.delete({ id: itemId })
+  return !errors?.length
+}
