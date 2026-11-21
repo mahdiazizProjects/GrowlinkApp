@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { useApp } from '../../context/AppContext'
 import { Todo } from '../../types'
 import { Plus, Check, Circle } from 'lucide-react'
+import * as api from '../../services/api'
+import { useToast, errorMessage } from '../ui/Toast'
 
 interface TodosPanelProps {
   userId: string
@@ -9,46 +11,59 @@ interface TodosPanelProps {
 
 export default function TodosPanel({ userId }: TodosPanelProps) {
   const { goals } = useApp()
+  const toast = useToast()
   const [todos, setTodos] = useState<Todo[]>([])
   const [newTodoText, setNewTodoText] = useState('')
   const [selectedGoalId, setSelectedGoalId] = useState<string>('')
+  const [adding, setAdding] = useState(false)
 
-  // Load todos from context (will be replaced with GraphQL query)
   useEffect(() => {
-    // TODO: Load todos via GraphQL query
-    // For now, use empty array
+    let cancelled = false
+    api.listTodos(userId)
+      .then(list => { if (!cancelled) setTodos(list) })
+      .catch(error => console.error('Could not load todos:', error))
+    return () => { cancelled = true }
   }, [userId])
 
   const userGoals = goals.filter(g => g.userId === userId && g.status === 'active')
 
-  const handleAddTodo = () => {
-    if (!newTodoText.trim()) return
-
-    const todo: Todo = {
-      id: `todo-${Date.now()}`,
-      userId,
-      goalId: selectedGoalId || undefined,
-      text: newTodoText.trim(),
-      done: false,
-      createdAt: new Date().toISOString()
+  const handleAddTodo = async () => {
+    const text = newTodoText.trim()
+    if (!text || adding) return
+    setAdding(true)
+    try {
+      const todo = await api.createTodo({ userId, text, goalId: selectedGoalId || undefined })
+      setTodos(prev => [...prev, todo])
+      setNewTodoText('')
+      setSelectedGoalId('')
+    } catch (error) {
+      toast.error(errorMessage(error, 'Could not add the todo.'))
+    } finally {
+      setAdding(false)
     }
-
-    setTodos([...todos, todo])
-    setNewTodoText('')
-    setSelectedGoalId('')
-    // TODO: Save via GraphQL mutation
   }
 
-  const handleToggleTodo = (todoId: string) => {
-    setTodos(todos.map(todo =>
-      todo.id === todoId ? { ...todo, done: !todo.done } : todo
-    ))
-    // TODO: Update via GraphQL mutation
+  const handleToggleTodo = async (todoId: string) => {
+    const todo = todos.find(t => t.id === todoId)
+    if (!todo) return
+    setTodos(prev => prev.map(t => t.id === todoId ? { ...t, done: !t.done } : t))
+    try {
+      await api.updateTodo(todoId, { done: !todo.done })
+    } catch (error) {
+      setTodos(prev => prev.map(t => t.id === todoId ? { ...t, done: todo.done } : t))
+      toast.error(errorMessage(error, 'Could not update the todo.'))
+    }
   }
 
-  const handleDeleteTodo = (todoId: string) => {
-    setTodos(todos.filter(todo => todo.id !== todoId))
-    // TODO: Delete via GraphQL mutation
+  const handleDeleteTodo = async (todoId: string) => {
+    const previous = todos
+    setTodos(prev => prev.filter(t => t.id !== todoId))
+    try {
+      await api.deleteTodo(todoId)
+    } catch (error) {
+      setTodos(previous)
+      toast.error(errorMessage(error, 'Could not delete the todo.'))
+    }
   }
 
   const getGoalName = (goalId?: string) => {

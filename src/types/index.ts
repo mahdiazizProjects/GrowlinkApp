@@ -14,6 +14,8 @@ export interface User {
   membershipTier?: 'standard' | 'premium' | 'exclusive';
   verified?: boolean;
   rating?: number;
+  /** Number of feedback entries the rating is based on. */
+  reviewCount?: number;
   totalSessions?: number;
   inPersonSessions?: number;
   createdAt: string;
@@ -93,7 +95,7 @@ export interface Event {
   venueId?: string;
   venue?: Venue;
   hostId: string;
-  host: User;
+  host?: User;
   date: string;
   time: string;
   duration: number;
@@ -183,7 +185,7 @@ export interface Badge {
   description: string;
   icon: string;
   earnedAt: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface Notification {
@@ -191,7 +193,7 @@ export interface Notification {
   userId: string;
   title: string;
   message: string;
-  type: 'session-booked' | 'session-upcoming' | 'feedback-received' | 'badge-earned' | 'admin-update';
+  type: 'session-booked' | 'session-upcoming' | 'session-update' | 'feedback-received' | 'badge-earned' | 'mentorship-request' | 'admin-update';
   read: boolean;
   relatedId?: string;
   createdAt: string;
@@ -217,6 +219,7 @@ export interface Goal {
 export interface Habit {
   id: string;
   goalId: string;
+  userId?: string;
   title: string;
   description?: string;
   frequency: 'daily' | 'weekly';
@@ -358,4 +361,13 @@ export interface Journey {
   comments?: JourneyComment[];
   createdAt: string;
   updatedAt?: string;
+}
+
+export interface MentorshipRequest {
+  id: string;
+  menteeId: string;
+  mentorId: string;
+  message: string;
+  status: 'PENDING' | 'ACCEPTED' | 'DECLINED';
+  createdAt: string;
 }

@@ -2,7 +2,8 @@ import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { Flame, Star, Clock, Target, Calendar, CheckCircle, Users, ArrowRight } from 'lucide-react'
 import { useApp } from '../../context/AppContext'
-import { parseISO, format, differenceInDays, subDays } from 'date-fns'
+import { parseISO, differenceInDays, format } from 'date-fns'
+import { currentStreak } from '../../utils/badges'
 import { Session } from '../../types'
 import { getSessionDateTime, isUpcomingSession } from '../../utils/sessionTime'
 
@@ -19,66 +20,26 @@ export default function MenteeDashboard({ onSelectSession }: MenteeDashboardProp
     habitCompletions
   } = useApp()
 
-  if (!currentUser) {
-    return null
-  }
+  // Hooks must run on every render, so the signed-out guard sits just before the JSX.
+  const uid = currentUser?.id
 
-  // Calculate streak (consecutive days with at least one habit completion)
-  const streak = useMemo(() => {
-    const userCompletions = habitCompletions.filter(
-      c => c.userId === currentUser.id && c.completed
-    )
-    
-    if (userCompletions.length === 0) return 0
-
-    // Get unique dates with completions, sorted descending
-    const completionDates = [...new Set(userCompletions.map(c => c.date))]
-      .map(d => parseISO(d))
-      .sort((a, b) => b.getTime() - a.getTime())
-    
-    if (completionDates.length === 0) return 0
-
-    let currentStreak = 0
-    let checkDate = new Date()
-    const todayStr = format(checkDate, 'yyyy-MM-dd')
-    
-    // Check if today has completions
-    const todayHasCompletions = completionDates.some(d => format(d, 'yyyy-MM-dd') === todayStr)
-    
-    // If today doesn't have completions, start from yesterday
-    if (!todayHasCompletions) {
-      checkDate = subDays(checkDate, 1)
-    }
-    
-    // Count consecutive days backwards
-    for (let i = 0; i < completionDates.length; i++) {
-      const expectedDateStr = format(checkDate, 'yyyy-MM-dd')
-      const completionDateStr = format(completionDates[i], 'yyyy-MM-dd')
-      
-      if (completionDateStr === expectedDateStr) {
-        currentStreak++
-        checkDate = subDays(checkDate, 1)
-      } else if (completionDateStr < expectedDateStr) {
-        // We've passed the expected date, streak is broken
-        break
-      }
-      // If completionDateStr > expectedDateStr, continue to next completion date
-    }
-    
-    return currentStreak
-  }, [currentUser, habitCompletions])
+  // Consecutive days with at least one habit completion, counting back from today (or yesterday)
+  const streak = useMemo(
+    () => currentStreak(habitCompletions.filter(c => c.userId === uid && c.completed).map(c => c.date)),
+    [uid, habitCompletions]
+  )
 
   // Calculate total points (1 point per habit completion)
   const totalPoints = useMemo(() => {
     return habitCompletions.filter(
-      c => c.userId === currentUser.id && c.completed
+      c => c.userId === uid && c.completed
     ).length
-  }, [currentUser, habitCompletions])
+  }, [uid, habitCompletions])
 
   // Get last session date
   const lastSession = useMemo(() => {
     const completedSessions = sessions
-      .filter(s => s.menteeId === currentUser.id && s.status === 'COMPLETED')
+      .filter(s => s.menteeId === uid && s.status === 'COMPLETED')
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     
     if (completedSessions.length === 0) return null
@@ -91,15 +52,15 @@ export default function MenteeDashboard({ onSelectSession }: MenteeDashboardProp
       daysAgo: daysAgo,
       session: completedSessions[0]
     }
-  }, [currentUser, sessions])
+  }, [uid, sessions])
 
   // Check if user has goals
-  const hasGoals = goals.filter(g => g.userId === currentUser.id).length > 0
+  const hasGoals = goals.filter(g => g.userId === uid).length > 0
   const hasHabits = habits.filter(h => {
-    const userGoals = goals.filter(g => g.userId === currentUser.id)
+    const userGoals = goals.filter(g => g.userId === uid)
     return userGoals.some(g => g.id === h.goalId)
   }).length > 0
-  const menteeSessions = sessions.filter(s => s.menteeId === currentUser.id)
+  const menteeSessions = sessions.filter(s => s.menteeId === uid)
   const hasSessions = menteeSessions.length > 0
   // "Meet your mentor" only turns green when mentor accepted AND the session day has passed (mentee "visited")
   const hasMetMentor = useMemo(() => {
@@ -113,7 +74,7 @@ export default function MenteeDashboard({ onSelectSession }: MenteeDashboardProp
 
   // Get upcoming sessions
   const upcomingSessions = sessions
-    .filter(s => s.menteeId === currentUser.id && (s.status === 'CONFIRMED' || s.status === 'PENDING'))
+    .filter(s => s.menteeId === uid && (s.status === 'CONFIRMED' || s.status === 'PENDING'))
     .filter(session => isUpcomingSession(session))
     .sort((a, b) => {
       const dateA = getSessionDateTime(a)?.getTime() ?? 0
@@ -121,6 +82,10 @@ export default function MenteeDashboard({ onSelectSession }: MenteeDashboardProp
       return dateA - dateB
     })
     .slice(0, 3)
+
+  if (!currentUser) {
+    return null
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -300,6 +265,11 @@ export default function MenteeDashboard({ onSelectSession }: MenteeDashboardProp
                         Waiting for mentor to accept
                       </p>
                     )}
+                    {session.status === 'CONFIRMED' && (
+                      <p className="mt-2 text-xs font-medium text-green-700 bg-green-50 border border-green-200 rounded px-2 py-1 inline-block">
+                        Confirmed{session.type === 'virtual' ? ' • Virtual' : ''}
+                      </p>
+                    )}
                   </button>
                 ))}
                 <Link
@@ -338,9 +308,12 @@ export default function MenteeDashboard({ onSelectSession }: MenteeDashboardProp
                     : 'Upgrade to unlock more features and exclusive access.'}
               </p>
               {currentUser.membershipTier !== 'exclusive' && (
-                <button className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-semibold hover:bg-primary-700 transition-colors">
-                  Upgrade Membership
-                </button>
+                <Link
+                  to="/contact"
+                  className="inline-block px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-semibold hover:bg-primary-700 transition-colors"
+                >
+                  Ask about upgrading
+                </Link>
               )}
             </div>
 

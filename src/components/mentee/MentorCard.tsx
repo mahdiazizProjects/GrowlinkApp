@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { User } from '../../types'
 import { Star, Bookmark, BookmarkCheck } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { useApp } from '../../context/AppContext'
 
 interface MentorCardProps {
   mentor: User
@@ -9,8 +10,11 @@ interface MentorCardProps {
 
 export default function MentorCard({ mentor }: MentorCardProps) {
   const navigate = useNavigate()
-  const [isSaved, setIsSaved] = useState(false)
+  const { savedMentorIds, toggleSavedMentor, requestMentorship, mentorshipRequests, currentUser } = useApp()
+  const isSaved = savedMentorIds.includes(mentor.id)
   const [showRequestModal, setShowRequestModal] = useState(false)
+  const [sending, setSending] = useState(false)
+  const pendingRequest = mentorshipRequests.find(r => r.mentorId === mentor.id && r.menteeId === currentUser?.id && r.status === 'PENDING')
 
   const handleViewProfile = () => {
     navigate(`/mentors/${mentor.id}`)
@@ -21,11 +25,19 @@ export default function MentorCard({ mentor }: MentorCardProps) {
   }
 
   const handleSave = () => {
-    setIsSaved(!isSaved)
-    // TODO: Implement save/unsave via GraphQL mutation
+    toggleSavedMentor(mentor.id)
   }
 
   const tags = mentor.skills?.slice(0, 3) || []
+  const [message, setMessage] = useState(`Hi ${mentor.name}! I'd like to request mentorship. I'm interested in learning about ${tags[0] || 'your expertise'}.`)
+
+  const handleSendRequest = async () => {
+    if (!message.trim()) return
+    setSending(true)
+    const ok = await requestMentorship(mentor, message.trim())
+    setSending(false)
+    if (ok) setShowRequestModal(false)
+  }
   const highlight = mentor.bio?.substring(0, 50) || 'Experienced mentor ready to help'
 
   return (
@@ -77,8 +89,8 @@ export default function MentorCard({ mentor }: MentorCardProps) {
             ))}
           </div>
           <span className="text-sm font-semibold text-gray-700">{mentor.rating?.toFixed(1) || 'No rating yet'}</span>
-          {mentor.totalSessions && (
-            <span className="text-xs text-gray-500">({mentor.totalSessions} sessions)</span>
+          {!!mentor.reviewCount && (
+            <span className="text-xs text-gray-500">({mentor.reviewCount} {mentor.reviewCount === 1 ? 'review' : 'reviews'})</span>
           )}
         </div>
 
@@ -92,9 +104,10 @@ export default function MentorCard({ mentor }: MentorCardProps) {
           </button>
           <button
             onClick={handleRequest}
+            disabled={!!pendingRequest}
             className="flex-1 px-4 py-2 border-2 border-primary-600 text-primary-600 rounded-lg hover:bg-primary-50 transition-colors text-sm font-semibold"
           >
-            Request
+            {pendingRequest ? 'Request pending' : 'Request'}
           </button>
           <button
             onClick={handleSave}
@@ -121,8 +134,10 @@ export default function MentorCard({ mentor }: MentorCardProps) {
             <textarea
               placeholder="Hi! I'd like to request mentorship..."
               rows={4}
+              aria-label="Message to the mentor"
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 mb-4"
-              defaultValue={`Hi ${mentor.name}! I'd like to request mentorship. I'm interested in learning about ${tags[0] || 'your expertise'}.`}
+              value={message}
+              onChange={e => setMessage(e.target.value)}
             />
             <div className="flex gap-2">
               <button
@@ -132,14 +147,11 @@ export default function MentorCard({ mentor }: MentorCardProps) {
                 Cancel
               </button>
               <button
-                onClick={() => {
-                  // TODO: Implement request via GraphQL mutation
-                  setShowRequestModal(false)
-                  alert('Request sent!')
-                }}
-                className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors font-semibold"
+                onClick={handleSendRequest}
+                disabled={sending || !message.trim()}
+                className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors font-semibold disabled:opacity-60"
               >
-                Send Request
+                {sending ? 'Sending…' : 'Send Request'}
               </button>
             </div>
           </div>

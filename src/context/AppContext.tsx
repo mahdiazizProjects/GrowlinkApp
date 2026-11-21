@@ -1,33 +1,25 @@
-import { createContext, useContext, useState, useEffect, useCallback, type Dispatch, type SetStateAction, type ReactNode } from 'react'
-import { User, Venue, Session, Event, Rating, Goal, Habit, HabitCompletion, Reflection, Journey, JourneyComment, Badge, SessionFeedback, MentorFeedbackStats, MentorSessionNotes, Notification, MentorStats, MenteeSummary, ReactionType, MentorAvailability } from '../types'
-import { fetchUserAttributes, getCurrentUser, signOut } from 'aws-amplify/auth'
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef, type ReactNode } from 'react'
+import { User, Venue, Session, Event, Goal, Habit, HabitCompletion, Reflection, Journey, JourneyComment, Badge, SessionFeedback, MentorFeedbackStats, MentorSessionNotes, Notification, MentorStats, MenteeSummary, ReactionType, MentorAvailability, MentorshipRequest } from '../types'
 import * as api from '../services/api'
+import * as auth from '../services/auth'
 import { getSessionDateTime } from '../utils/sessionTime'
-
-async function cancelPastPendingSessions(
-  sessionsData: Session[],
-  setSessions: Dispatch<SetStateAction<Session[]>>
-): Promise<void> {
-  const toCancel = sessionsData.filter(s => {
-    const dt = getSessionDateTime(s)
-    return s.status === 'PENDING' && !!dt && dt.getTime() < Date.now()
-  })
-  if (toCancel.length === 0) return
-  const results = await Promise.all(toCancel.map(s => api.updateSession(s.id, { status: 'CANCELLED' }).then(u => u, () => null)))
-  const updatedMap = new Map(results.filter((u): u is Session => u != null).map(u => [u.id, u]))
-  if (updatedMap.size > 0) setSessions(prev => prev.map(x => updatedMap.get(x.id) ?? x))
-}
+import { computeAvailableSlots, DEFAULT_AVAILABILITY_SLOTS } from '../utils/availability'
+import { computeBadges } from '../utils/badges'
+import { DEMO_VENUES } from '../data/demoData'
+import { useToast, errorMessage } from '../components/ui/Toast'
 
 interface AppContextType {
   currentUser: User | null
   setCurrentUser: (user: User | null) => void
   refreshCurrentUser: () => Promise<User | null>
   logout: () => Promise<void>
+  /** True while the signed-in user is being resolved or their data is loading. */
   loading: boolean
+  /** True until the first check for an existing sign-in has finished. */
+  authLoading: boolean
   venues: Venue[]
   sessions: Session[]
   events: Event[]
-  ratings: Rating[]
   goals: Goal[]
   habits: Habit[]
   habitCompletions: HabitCompletion[]
@@ -37,38 +29,44 @@ interface AppContextType {
   sessionFeedbacks: SessionFeedback[]
   mentorSessionNotes: MentorSessionNotes[]
   notifications: Notification[]
+  savedMentorIds: string[]
+  mentorshipRequests: MentorshipRequest[]
   addSession: (session: Session) => Promise<void>
   updateSession: (sessionId: string, updates: Partial<Session>) => Promise<void>
-  addEvent: (event: Event) => void
-  addRating: (rating: Rating) => void
-  addGoal: (goal: Goal) => Promise<void>
+  toggleEventAttendance: (eventId: string) => Promise<void>
+  addGoal: (goal: Goal) => Promise<Goal | null>
   updateGoal: (goalId: string, updates: Partial<Goal>) => Promise<void>
-  removeGoal: (goalId: string) => Promise<void>
-  addHabit: (habit: Habit) => Promise<void>
+  removeGoal: (goalId: string) => Promise<boolean>
+  addHabit: (habit: Habit) => Promise<Habit | null>
   updateHabit: (habitId: string, updates: Partial<Habit>) => Promise<void>
-  toggleHabitCompletion: (habitId: string, date: string) => void
-  addReflection: (reflection: Reflection) => Promise<void>
-  addJourney: (journey: Journey) => Promise<void>
+  removeHabit: (habitId: string) => Promise<void>
+  toggleHabitCompletion: (habitId: string, date: string) => Promise<void>
+  addReflection: (reflection: Reflection) => Promise<boolean>
+  addJourney: (journey: Journey) => Promise<boolean>
+  removeJourney: (journeyId: string) => Promise<void>
   addReactionToJourney: (journeyId: string, userId: string, type: ReactionType) => Promise<void>
   addCommentToJourney: (journeyId: string, userId: string, text: string) => Promise<void>
-  addBadge: (badge: Badge) => void
-  addSessionFeedback: (feedback: SessionFeedback) => Promise<void>
+  addSessionFeedback: (feedback: SessionFeedback) => Promise<boolean>
   getMentorFeedbackStats: (mentorId: string) => MentorFeedbackStats | null
-  addMentorSessionNotes: (notes: MentorSessionNotes) => void
-  updateMentorSessionNotes: (noteId: string, updates: Partial<MentorSessionNotes>) => void
+  addMentorSessionNotes: (notes: MentorSessionNotes) => Promise<void>
+  updateMentorSessionNotes: (noteId: string, updates: Partial<MentorSessionNotes>) => Promise<void>
   getMentorSessionNotes: (sessionId: string) => MentorSessionNotes | null
-  addNotification: (notification: Notification) => void
   markNotificationAsRead: (notificationId: string) => void
   getUnreadNotificationCount: (userId: string) => number
   getMentorStats: (mentorId: string) => MentorStats | null
   getMenteeSummaries: (mentorId: string) => MenteeSummary[]
   getMentorAvailability: (mentorId: string) => MentorAvailability
+  loadMentorAvailability: (mentorId: string) => Promise<void>
   updateMentorAvailability: (mentorId: string, availability: MentorAvailability) => Promise<void>
   getAvailableSlotsForMentor: (mentorId: string, date: string, durationMinutes?: number) => string[]
+  toggleSavedMentor: (mentorId: string) => Promise<void>
+  requestMentorship: (mentor: User, message: string) => Promise<boolean>
+  respondToMentorshipRequest: (requestId: string, status: 'ACCEPTED' | 'DECLINED') => Promise<void>
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined)
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const useApp = () => {
   const context = useContext(AppContext)
   if (!context) {
@@ -77,437 +75,470 @@ export const useApp = () => {
   return context
 }
 
-export function AppProvider({ children }: { children: ReactNode }) {
-  const [currentUser, setCurrentUserState] = useState<User | null>(null)
-  const [loading, setLoading] = useState(true)
+const isMentorRole = (role?: string) => {
+  const r = (role || '').toLowerCase()
+  return r === 'mentor' || r === 'both'
+}
 
-  const setCurrentUser = (user: User | null) => {
-    setCurrentUserState(user)
+/** Built-in partner venues, shown until venues are added to the backend's Venue table. */
+const FALLBACK_VENUES: Venue[] = DEMO_VENUES.map(v => ({
+  id: v.id as string,
+  name: v.name as string,
+  type: (v.type as string).toLowerCase().replace(/_/g, '-') as Venue['type'],
+  address: v.address as string,
+  city: v.city as string,
+  capacity: v.capacity as number,
+  amenities: v.amenities as string[],
+  image: v.image as string,
+  isPartner: true,
+  partnershipTier: (v.partnershipTier as string).toLowerCase() as Venue['partnershipTier']
+}))
+
+/** Resolves to `fallback` instead of rejecting, so one failing query cannot blank the whole app. */
+async function safe<T>(label: string, promise: Promise<T>, fallback: T): Promise<T> {
+  try {
+    return await promise
+  } catch (error) {
+    console.error(`Could not load ${label}:`, error)
+    return fallback
   }
+}
 
-  const refreshCurrentUser = useCallback(async (): Promise<User | null> => {
-    setLoading(true)
-    try {
-      const authUser = await getCurrentUser()
-      const attributes = await fetchUserAttributes()
-      const userId = authUser.userId
-      const email = attributes.email || authUser.username
-      const name = attributes.name || email?.split('@')[0] || 'New User'
+export function AppProvider({ children }: { children: ReactNode }) {
+  const toast = useToast()
+  const [currentUser, setCurrentUserState] = useState<User | null>(null)
+  const [authLoading, setAuthLoading] = useState(true)
+  const [dataLoading, setDataLoading] = useState(false)
 
-      let dbUser = await api.getUser(userId)
-      if (!dbUser) {
-        dbUser = await api.createUser({
-          id: userId,
-          email: email || '',
-          name,
-          username: email?.split('@')[0] || authUser.username,
-          role: 'MENTEE'
-        })
-      }
-      if (dbUser) {
-        setCurrentUser(dbUser)
-        return dbUser
-      }
-      setCurrentUser(null)
-      return null
-    } catch (error) {
-      setCurrentUser(null)
-      return null
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  const logout = useCallback(async () => {
-    try {
-      await signOut()
-    } finally {
-      setCurrentUser(null)
-    }
-  }, [])
-
-  // Restore authenticated user on app load
-  useEffect(() => {
-    refreshCurrentUser()
-  }, [refreshCurrentUser])
-
-  // Data from API
-  const [venues, setVenues] = useState<Venue[]>([])
+  const [venues, setVenues] = useState<Venue[]>(FALLBACK_VENUES)
   const [sessions, setSessions] = useState<Session[]>([])
   const [events, setEvents] = useState<Event[]>([])
-  const [ratings, setRatings] = useState<Rating[]>([])
   const [goals, setGoals] = useState<Goal[]>([])
   const [habits, setHabits] = useState<Habit[]>([])
   const [habitCompletions, setHabitCompletions] = useState<HabitCompletion[]>([])
   const [reflections, setReflections] = useState<Reflection[]>([])
   const [journeys, setJourneys] = useState<Journey[]>([])
-  const [badges, setBadges] = useState<Badge[]>([])
   const [sessionFeedbacks, setSessionFeedbacks] = useState<SessionFeedback[]>([])
   const [mentorSessionNotes, setMentorSessionNotes] = useState<MentorSessionNotes[]>([])
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [mentorAvailabilities, setMentorAvailabilities] = useState<Record<string, MentorAvailability>>({})
+  const [savedMentorIds, setSavedMentorIds] = useState<string[]>([])
+  const [mentorshipRequests, setMentorshipRequests] = useState<MentorshipRequest[]>([])
+  // Other people's bookings with a mentor. Only used to block taken slots, never shown.
+  const [mentorBookings, setMentorBookings] = useState<Record<string, Session[]>>({})
 
-  // Load initial data when user changes
+  // Latest values for callbacks that must not be re-created on every state change.
+  const stateRef = useRef({ currentUser, sessions, journeys, habitCompletions, savedMentorIds })
+  stateRef.current = { currentUser, sessions, journeys, habitCompletions, savedMentorIds }
+
+  const setCurrentUser = useCallback((user: User | null) => {
+    setCurrentUserState(user)
+  }, [])
+
+  const refreshCurrentUser = useCallback(async (): Promise<User | null> => {
+    try {
+      const identity = await auth.getIdentity()
+      if (!identity) {
+        setCurrentUserState(null)
+        return null
+      }
+      const email = identity.email || ''
+      let dbUser = await api.getUser(identity.userId)
+      if (!dbUser) {
+        dbUser = await api.createUser({
+          id: identity.userId,
+          email,
+          name: identity.name || email.split('@')[0] || 'New User',
+          username: email.split('@')[0] || identity.userId,
+          role: 'MENTEE'
+        })
+      }
+      setCurrentUserState(dbUser)
+      return dbUser
+    } catch (error) {
+      console.error('Could not restore the signed-in user:', error)
+      setCurrentUserState(null)
+      return null
+    } finally {
+      setAuthLoading(false)
+    }
+  }, [])
+
+  const logout = useCallback(async () => {
+    try {
+      await auth.signOut()
+    } finally {
+      setCurrentUserState(null)
+    }
+  }, [])
+
+  // Restore the signed-in user on app load
   useEffect(() => {
+    refreshCurrentUser()
+  }, [refreshCurrentUser])
+
+  /** Best-effort notification for another user; never blocks or fails the action that triggered it. */
+  const notifyUser = useCallback((n: Omit<Notification, 'id' | 'createdAt' | 'read'>) => {
+    api.createNotification(n).then(
+      created => {
+        if (created.userId === stateRef.current.currentUser?.id) setNotifications(prev => [created, ...prev])
+      },
+      error => console.error('Could not create notification:', error)
+    )
+  }, [])
+
+  // Public data: venues and events
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const [venuesData, eventsData] = await Promise.all([
+        safe('venues', api.listVenues(), [] as Venue[]),
+        safe('events', api.listEvents(), [] as Event[])
+      ])
+      if (cancelled) return
+      setVenues(venuesData.length > 0 ? venuesData : FALLBACK_VENUES)
+      setEvents(eventsData)
+    })()
+    return () => { cancelled = true }
+  }, [])
+
+  // User-specific data
+  const userId = currentUser?.id
+  const userIsMentor = isMentorRole(currentUser?.role)
+  useEffect(() => {
+    let cancelled = false
+    const reset = () => {
+      setSessions([]); setGoals([]); setHabits([]); setHabitCompletions([]); setReflections([])
+      setSessionFeedbacks([]); setMentorSessionNotes([]); setNotifications([]); setSavedMentorIds([])
+      setMentorshipRequests([]); setMentorAvailabilities({})
+    }
+
     const loadData = async () => {
-      setLoading(true)
+      if (!userId) {
+        reset()
+        setJourneys(await safe('journeys', api.listJourneys(), [] as Journey[]))
+        return
+      }
+      setDataLoading(true)
       try {
-        // Load venues (static for now - will be added to schema)
-        setVenues([
-          {
-            id: '1',
-            name: 'Central Library',
-            type: 'library',
-            address: '123 Main St',
-            city: 'New York',
-            capacity: 50,
-            amenities: ['WiFi', 'Meeting Rooms', 'Coffee', 'Parking'],
-            image: 'https://images.unsplash.com/photo-1481627834876-b7833e8f5570?w=800',
-            isPartner: true,
-            partnershipTier: 'gold'
-          },
-          {
-            id: '2',
-            name: 'TechHub Co-working',
-            type: 'co-working',
-            address: '456 Innovation Ave',
-            city: 'San Francisco',
-            capacity: 30,
-            amenities: ['WiFi', 'Phone Booths', 'Kitchen', 'Printing'],
-            image: 'https://images.unsplash.com/photo-1497366216548-37526070297c?w=800',
-            isPartner: true,
-            partnershipTier: 'silver'
-          },
-          {
-            id: '3',
-            name: 'Community Center Downtown',
-            type: 'community-center',
-            address: '789 Community Way',
-            city: 'Seattle',
-            capacity: 100,
-            amenities: ['WiFi', 'Large Hall', 'Kitchen', 'Parking'],
-            image: 'https://images.unsplash.com/photo-1511578314322-379afb476865?w=800',
-            isPartner: true,
-            partnershipTier: 'bronze'
-          }
+        const [sessionsData, goalsData, habitsData, completionsData, reflectionsData, journeysData, feedbackData, notesData, notificationsData, savedData, requestsData] = await Promise.all([
+          safe('sessions', api.listAllSessionsForUser(userId), [] as Session[]),
+          safe('goals', api.listGoals(userId), [] as Goal[]),
+          safe('habits', api.listHabits(userId), [] as Habit[]),
+          safe('habit completions', api.listHabitCompletions(userId), [] as HabitCompletion[]),
+          safe('reflections', api.listReflections(userId), [] as Reflection[]),
+          safe('journeys', api.listJourneys(), [] as Journey[]),
+          safe('feedback', api.listSessionFeedbackForUser(userId), [] as SessionFeedback[]),
+          userIsMentor ? safe('session notes', api.listMentorSessionNotes(userId), [] as MentorSessionNotes[]) : Promise.resolve([] as MentorSessionNotes[]),
+          safe('notifications', api.listNotifications(userId), [] as Notification[]),
+          safe('saved mentors', api.listSavedMentorIds(userId), [] as string[]),
+          safe('mentorship requests', api.listMentorshipRequests(userId), [] as MentorshipRequest[])
         ])
+        if (cancelled) return
 
-        // Load user-specific data if logged in
-        if (currentUser?.id) {
-          const [sessionsData, goalsData, habitsData, reflectionsData, journeysData] = await Promise.all([
-            Promise.all([
-              api.listSessionsForUser(currentUser.id, 'mentor'),
-              api.listSessionsForUser(currentUser.id, 'mentee')
-            ]).then(results => results.flat()),
-            api.listGoals(currentUser.id),
-            api.listHabits(currentUser.id),
-            api.listReflections(currentUser.id),
-            api.listJourneys(), // Load all journeys - filtering by visibility happens in JourneyFeed
-          ])
+        // Pending requests whose time has passed can no longer be approved.
+        const expired = sessionsData.filter(s => {
+          const dt = getSessionDateTime(s)
+          return s.status === 'PENDING' && !!dt && dt.getTime() < Date.now()
+        })
+        const expiredResults = await Promise.all(expired.map(s =>
+          api.updateSession(s.id, { status: 'CANCELLED', cancelledAt: new Date().toISOString(), cancelledBy: 'system' }).catch(() => null)
+        ))
+        if (cancelled) return
+        const expiredMap = new Map(expiredResults.filter((s): s is Session => s != null).map(s => [s.id, s]))
+        const finalSessions = sessionsData.map(s => expiredMap.get(s.id) ?? s)
 
-          setSessions(sessionsData)
-          setGoals(goalsData)
-          setHabits(habitsData)
-          setReflections(reflectionsData)
-          setJourneys(journeysData)
+        const feedbackSessionIds = new Set(feedbackData.map(f => f.sessionId))
+        setSessions(finalSessions.map(s => feedbackSessionIds.has(s.id) && !s.feedbackSubmitted ? { ...s, feedbackSubmitted: true } : s))
+        setGoals(goalsData)
+        setHabits(habitsData)
+        setHabitCompletions(completionsData)
+        setReflections(reflectionsData)
+        setJourneys(journeysData)
+        setSessionFeedbacks(feedbackData)
+        setMentorSessionNotes(notesData)
+        setSavedMentorIds(savedData)
+        setMentorshipRequests(requestsData)
 
-          const mentorIds = new Set<string>()
-          if (currentUser.role === 'MENTOR' || currentUser.role === 'BOTH' || currentUser.role === 'mentor') {
-            mentorIds.add(currentUser.id)
-          }
-          sessionsData.forEach(s => mentorIds.add(s.mentorId))
-          const availabilities = await Promise.all(
-            Array.from(mentorIds).map(id => api.getMentorAvailability(id))
-          )
-          const avMap: Record<string, MentorAvailability> = {}
-          availabilities.forEach(a => { if (a) avMap[a.mentorId] = a })
-          setMentorAvailabilities(avMap)
+        // Session requests created before notifications were stored still deserve a bell entry.
+        const notified = new Set(notificationsData.map(n => n.relatedId).filter(Boolean))
+        const legacyPending: Notification[] = finalSessions
+          .filter(s => s.mentorId === userId && s.status === 'PENDING' && !notified.has(s.id))
+          .map(s => ({
+            id: `notif-pending-${s.id}`,
+            userId,
+            title: 'New Session Request',
+            message: `${s.mentee?.name || 'A mentee'} requested a session. Approve or reject from your dashboard.`,
+            type: 'session-booked' as const,
+            read: false,
+            relatedId: s.id,
+            createdAt: new Date().toISOString()
+          }))
+        setNotifications([...legacyPending, ...notificationsData])
 
-          // Show notifications for pending session requests (notifications are in-memory; mentor sees these when they load)
-          setNotifications(prev => {
-            const existingRelated = new Set(prev.map(n => n.relatedId).filter(Boolean))
-            const pendingForMentor = sessionsData.filter(
-              s => s.mentorId === currentUser.id && s.status === 'PENDING' && !existingRelated.has(s.id)
-            )
-            const newOnes = pendingForMentor.map(s => ({
-              id: `notif-pending-${s.id}`,
-              userId: currentUser.id,
-              title: 'New Session Request',
-              message: `${s.mentee?.name || 'A mentee'} requested a session. Approve or reject from your dashboard.`,
-              type: 'session-booked' as const,
-              read: false,
-              relatedId: s.id,
-              createdAt: new Date().toISOString()
-            }))
-            return newOnes.length > 0 ? [...newOnes, ...prev] : prev
-          })
-          await cancelPastPendingSessions(sessionsData, setSessions)
-        } else {
-          // Load public data
-          const sessionsData = await api.listSessions()
-          setSessions(sessionsData)
-          await cancelPastPendingSessions(sessionsData, setSessions)
-        }
-
-        // Load events
-        const eventsData = await api.listEvents()
-        setEvents(eventsData)
-      } catch (error) {
-        console.error('Error loading data:', error)
+        const mentorIds = new Set<string>(finalSessions.map(s => s.mentorId))
+        if (userIsMentor) mentorIds.add(userId)
+        const availabilities = await Promise.all(
+          Array.from(mentorIds).map(id => safe('availability', api.getMentorAvailability(id), null))
+        )
+        if (cancelled) return
+        const avMap: Record<string, MentorAvailability> = {}
+        availabilities.forEach(a => { if (a) avMap[a.mentorId] = a })
+        setMentorAvailabilities(prev => ({ ...prev, ...avMap }))
       } finally {
-        setLoading(false)
+        if (!cancelled) setDataLoading(false)
       }
     }
 
     loadData()
-  }, [currentUser?.id])
+    return () => { cancelled = true }
+  }, [userId, userIsMentor])
 
-  const addSession = async (session: Session) => {
-    try {
-      const created = await api.createSession(session)
-      if (created) {
-        // Reload sessions from database to ensure we have the latest data with all relationships
-        if (currentUser?.id) {
-          const [mentorSessions, menteeSessions] = await Promise.all([
-            api.listSessionsForUser(currentUser.id, 'mentor'),
-            api.listSessionsForUser(currentUser.id, 'mentee')
-          ])
-          const allSessions = [...mentorSessions, ...menteeSessions]
-          setSessions(allSessions)
-          
-          // Create notification for mentor when session is booked
-          if (created.mentorId && currentUser.id !== created.mentorId) {
-            // Fetch mentee name for notification
-            const mentee = await api.getUser(created.menteeId)
-            const notification: Notification = {
-              id: `notif-${Date.now()}`,
-              userId: created.mentorId,
-              title: 'New Session Booked',
-              message: `${mentee?.name || 'A mentee'} booked a session with you on ${new Date(created.date).toLocaleDateString()}`,
-              type: 'session-booked',
-              read: false,
-              relatedId: created.id,
-              createdAt: new Date().toISOString()
-            }
-            setNotifications(prev => [notification, ...prev])
-          }
-        } else {
-          // Fallback: just add to local state if no current user
-          setSessions(prev => [...prev, created])
-        }
-      }
-    } catch (error) {
-      console.error('Error creating session:', error)
-      throw error // Re-throw so calling code can handle it
+  const addSession = useCallback(async (session: Session) => {
+    const created = await api.createSession(session)
+    setSessions(prev => [...prev.filter(s => s.id !== created.id), created])
+    const me = stateRef.current.currentUser
+    if (created.mentorId && me?.id !== created.mentorId) {
+      const when = getSessionDateTime(created)
+      notifyUser({
+        userId: created.mentorId,
+        title: 'New Session Request',
+        message: `${created.mentee?.name || me?.name || 'A mentee'} requested a session${when ? ` on ${when.toLocaleDateString()} at ${created.time}` : ''}. Approve or decline from your dashboard.`,
+        type: 'session-booked',
+        relatedId: created.id
+      })
     }
-  }
+  }, [notifyUser])
 
   const updateSession = useCallback(async (sessionId: string, updates: Partial<Session>) => {
+    const before = stateRef.current.sessions.find(s => s.id === sessionId)
     const updated = await api.updateSession(sessionId, updates)
-    if (updated) {
-      setSessions(prev => prev.map(s => s.id === sessionId ? updated : s))
+    if (!updated) return
+    setSessions(prev => prev.map(s => s.id === sessionId ? { ...updated, feedbackSubmitted: updated.feedbackSubmitted ?? s.feedbackSubmitted } : s))
+
+    // Tell the other participant what changed.
+    const me = stateRef.current.currentUser
+    if (!me) return
+    const otherId = me.id === updated.mentorId ? updated.menteeId : updated.mentorId
+    if (!otherId || otherId === me.id) return
+    const when = getSessionDateTime(updated)
+    const label = when ? ` on ${when.toLocaleDateString()}` : ''
+    let message: string | null = null
+    if (updates.cancellationRequestedAt) {
+      message = `${me.name} asked to cancel your session${label}. Reason: ${updates.cancellationReason || 'not given'}. Please accept or reject it from your dashboard.`
+    } else if (updates.status && updates.status !== before?.status) {
+      if (updates.status === 'CONFIRMED') message = `${me.name} confirmed your session${label}.`
+      else if (updates.status === 'CANCELLED') message = `${me.name} cancelled your session${label}.${updates.cancellationReason ? ` Reason: ${updates.cancellationReason}` : ''}`
+      else if (updates.status === 'COMPLETED') message = `Your session${label} was marked complete. Share your feedback from the dashboard.`
+    } else if (updates.menteeAcceptedCancellation === false) {
+      message = `${me.name} did not accept the cancellation, so the session${label} is still on.`
     }
-  }, [])
+    if (message) notifyUser({ userId: otherId, title: 'Session update', message, type: 'session-update', relatedId: sessionId })
+  }, [notifyUser])
 
-  const addEvent = (event: Event) => {
-    setEvents([...events, event])
-  }
+  const toggleEventAttendance = useCallback(async (eventId: string) => {
+    const me = stateRef.current.currentUser
+    if (!me) return
+    try {
+      const event = await api.listEvents().then(list => list.find(e => e.id === eventId))
+      const attending = !!event?.attendees.includes(me.id)
+      const updated = await api.setEventAttendance(eventId, me.id, !attending)
+      setEvents(prev => prev.map(e => e.id === eventId ? updated : e))
+      toast.success(attending ? 'You are no longer attending this event.' : 'You are in! See you there.')
+    } catch (error) {
+      toast.error(errorMessage(error, 'Could not update your attendance.'))
+    }
+  }, [toast])
 
-  const addRating = (rating: Rating) => {
-    setRatings([...ratings, rating])
-  }
-
-  const addGoal = async (goal: Goal) => {
+  const addGoal = useCallback(async (goal: Goal): Promise<Goal | null> => {
     try {
       const created = await api.createGoal(goal)
-      if (created) {
-        setGoals(prev => [...prev, created])
-      }
+      setGoals(prev => [...prev, created])
+      return created
     } catch (error) {
-      console.error('Error creating goal:', error)
+      toast.error(errorMessage(error, 'Could not save your goal.'))
+      return null
     }
-  }
+  }, [toast])
 
-  const updateGoal = async (goalId: string, updates: Partial<Goal>) => {
+  const updateGoal = useCallback(async (goalId: string, updates: Partial<Goal>) => {
     try {
       const updated = await api.updateGoal(goalId, updates)
-      if (updated) {
-        setGoals(prev => prev.map(g => g.id === goalId ? updated : g))
-      }
+      if (updated) setGoals(prev => prev.map(g => g.id === goalId ? updated : g))
     } catch (error) {
-      console.error('Error updating goal:', error)
+      toast.error(errorMessage(error, 'Could not update your goal.'))
     }
-  }
+  }, [toast])
 
-  const removeGoal = async (goalId: string) => {
+  const removeHabit = useCallback(async (habitId: string) => {
+    await api.deleteHabit(habitId)
+    setHabits(prev => prev.filter(h => h.id !== habitId))
+    setHabitCompletions(prev => prev.filter(c => c.habitId !== habitId))
+  }, [])
+
+  const removeGoal = useCallback(async (goalId: string): Promise<boolean> => {
     try {
-      // Remove goal from state
-      setGoals(goals.filter(g => g.id !== goalId))
-      // Also remove associated habits
-      setHabits(habits.filter(h => h.goalId !== goalId))
+      const goalHabits = await api.listHabits(stateRef.current.currentUser?.id || '').then(all => all.filter(h => h.goalId === goalId))
+      await Promise.all(goalHabits.map(h => api.deleteHabit(h.id)))
+      const ok = await api.deleteGoal(goalId)
+      if (!ok) throw new Error('The goal could not be deleted.')
+      const removedHabitIds = new Set(goalHabits.map(h => h.id))
+      setGoals(prev => prev.filter(g => g.id !== goalId))
+      setHabits(prev => prev.filter(h => h.goalId !== goalId))
+      setHabitCompletions(prev => prev.filter(c => !removedHabitIds.has(c.habitId)))
+      return true
     } catch (error) {
-      console.error('Error removing goal from state:', error)
+      toast.error(errorMessage(error, 'Could not delete the goal.'))
+      return false
     }
-  }
+  }, [toast])
 
-  const addHabit = async (habit: Habit) => {
+  const addHabit = useCallback(async (habit: Habit): Promise<Habit | null> => {
     try {
-      const created = await api.createHabit(habit)
-      if (created) {
-        setHabits(prev => [...prev, created])
-      }
+      const created = await api.createHabit({ ...habit, userId: habit.userId || stateRef.current.currentUser?.id })
+      setHabits(prev => [...prev, created])
+      return created
     } catch (error) {
-      console.error('Error creating habit:', error)
+      toast.error(errorMessage(error, 'Could not save the habit.'))
+      return null
     }
-  }
+  }, [toast])
 
-  const updateHabit = async (habitId: string, updates: Partial<Habit>) => {
+  const updateHabit = useCallback(async (habitId: string, updates: Partial<Habit>) => {
     try {
-      // Note: Update habit API call needed
-      setHabits(habits.map(h => h.id === habitId ? { ...h, ...updates, updatedAt: new Date().toISOString() } : h))
+      const updated = await api.updateHabit(habitId, updates)
+      if (updated) setHabits(prev => prev.map(h => h.id === habitId ? updated : h))
     } catch (error) {
-      console.error('Error updating habit:', error)
+      toast.error(errorMessage(error, 'Could not update the habit.'))
     }
-  }
+  }, [toast])
 
-  const toggleHabitCompletion = (habitId: string, date: string) => {
-    const existing = habitCompletions.find(
-      hc => hc.habitId === habitId && hc.date === date
-    )
-
+  const toggleHabitCompletion = useCallback(async (habitId: string, date: string) => {
+    const me = stateRef.current.currentUser
+    if (!me) return
+    const existing = stateRef.current.habitCompletions.find(hc => hc.habitId === habitId && hc.date === date)
     if (existing) {
-      setHabitCompletions(habitCompletions.filter(hc => hc.id !== existing.id))
-    } else {
-      const newCompletion: HabitCompletion = {
-        id: `hc-${Date.now()}`,
-        habitId,
-        userId: currentUser?.id || '',
-        date,
-        completed: true,
-        createdAt: new Date().toISOString()
+      // Optimistic removal, restored if the server rejects it.
+      setHabitCompletions(prev => prev.filter(hc => hc.id !== existing.id))
+      try {
+        if (!existing.id.startsWith('pending-')) await api.deleteHabitCompletion(existing.id)
+      } catch (error) {
+        setHabitCompletions(prev => [...prev, existing])
+        toast.error(errorMessage(error, 'Could not update the habit.'))
       }
-      setHabitCompletions([...habitCompletions, newCompletion])
+      return
     }
-  }
+    const pendingId = `pending-${habitId}-${date}`
+    const optimistic: HabitCompletion = { id: pendingId, habitId, userId: me.id, date, completed: true, createdAt: new Date().toISOString() }
+    setHabitCompletions(prev => [...prev, optimistic])
+    try {
+      const created = await api.createHabitCompletion({ habitId, userId: me.id, date })
+      setHabitCompletions(prev => prev.map(hc => hc.id === pendingId ? created : hc))
+    } catch (error) {
+      setHabitCompletions(prev => prev.filter(hc => hc.id !== pendingId))
+      toast.error(errorMessage(error, 'Could not record the habit.'))
+    }
+  }, [toast])
 
-  const addReflection = async (reflection: Reflection) => {
+  const addReflection = useCallback(async (reflection: Reflection): Promise<boolean> => {
     try {
       const created = await api.createReflection(reflection)
-      if (created) {
-        setReflections(prev => [...prev, created])
-      }
+      setReflections(prev => [...prev, created])
+      return true
     } catch (error) {
-      console.error('Error creating reflection:', error)
+      toast.error(errorMessage(error, 'Could not save your reflection.'))
+      return false
     }
-  }
+  }, [toast])
 
-  const addJourney = async (journey: Journey) => {
+  const addJourney = useCallback(async (journey: Journey): Promise<boolean> => {
     try {
       const created = await api.createJourney(journey)
-      if (created) {
-        setJourneys(prev => [created, ...prev])
-      }
+      setJourneys(prev => [created, ...prev])
+      return true
     } catch (error) {
-      console.error('Error creating journey:', error)
+      toast.error(errorMessage(error, 'Could not share your journey.'))
+      return false
     }
-  }
+  }, [toast])
 
-  const addReactionToJourney = async (journeyId: string, userId: string, type: ReactionType) => {
+  const removeJourney = useCallback(async (journeyId: string) => {
     try {
-      // Check if user already reacted
-      const journey = journeys.find(j => j.id === journeyId)
+      await api.deleteJourney(journeyId)
+      setJourneys(prev => prev.filter(j => j.id !== journeyId))
+    } catch (error) {
+      toast.error(errorMessage(error, 'Could not delete the post.'))
+    }
+  }, [toast])
+
+  const addReactionToJourney = useCallback(async (journeyId: string, reactingUserId: string, type: ReactionType) => {
+    try {
+      const journey = stateRef.current.journeys.find(j => j.id === journeyId)
       if (!journey) return
+      const wanted = type.toUpperCase()
+      const userReaction = (journey.reactions || []).find(r => r.userId === reactingUserId)
 
-      const existingReactions = journey.reactions || []
-      const userReaction = existingReactions.find((r: { userId: string; type: string }) => r.userId === userId)
-
-      if (userReaction) {
-        const reactionId = userReaction.id
-        // If same type, remove the reaction (toggle off)
-        if (userReaction.type === type) {
-          if (reactionId) await api.deleteJourneyReaction(reactionId)
-        } else {
-          // Change reaction type - delete old and create new
-          if (reactionId) await api.deleteJourneyReaction(reactionId)
-          await api.createJourneyReaction({ journeyId, userId, type })
-        }
-      } else {
-        // Add new reaction
-        await api.createJourneyReaction({ journeyId, userId, type })
+      if (userReaction?.id) await api.deleteJourneyReaction(userReaction.id)
+      // Same type again toggles the reaction off; a different type replaces it.
+      if (!userReaction || userReaction.type.toUpperCase() !== wanted) {
+        await api.createJourneyReaction({ journeyId, userId: reactingUserId, type })
       }
 
-      // Refetch the journey to get all reactions (including from other users)
+      // Refetch so reactions from other people are included.
       const updatedJourney = await api.getJourney(journeyId)
-      if (updatedJourney) {
-        setJourneys(journeys.map(j =>
-          j.id === journeyId ? updatedJourney : j
-        ))
-      }
+      if (updatedJourney) setJourneys(prev => prev.map(j => j.id === journeyId ? updatedJourney : j))
     } catch (error) {
-      console.error('Error managing journey reaction:', error)
+      toast.error(errorMessage(error, 'Could not save your reaction.'))
     }
-  }
+  }, [toast])
 
-  const addCommentToJourney = async (journeyId: string, userId: string, text: string) => {
+  const addCommentToJourney = useCallback(async (journeyId: string, commentingUserId: string, text: string) => {
     try {
-      const newComment = await api.createJourneyComment({ journeyId, userId, text })
+      const newComment = await api.createJourneyComment({ journeyId, userId: commentingUserId, text })
       if (newComment) {
-        setJourneys(journeys.map(j =>
+        setJourneys(prev => prev.map(j =>
           j.id === journeyId
             ? { ...j, comments: [...(j.comments || []), newComment as JourneyComment] }
             : j
         ))
       }
     } catch (error) {
-      console.error('Error adding journey comment:', error)
+      toast.error(errorMessage(error, 'Could not post your comment.'))
     }
-  }
+  }, [toast])
 
-  const addBadge = (badge: Badge) => {
-    setBadges([...badges, badge])
-  }
-
-  const addSessionFeedback = async (feedback: SessionFeedback) => {
+  const addSessionFeedback = useCallback(async (feedback: SessionFeedback): Promise<boolean> => {
     try {
-      // Note: SessionFeedback API calls needed when schema is updated
-      setSessionFeedbacks([...sessionFeedbacks, feedback])
-      // Mark session as having feedback submitted
-      setSessions(sessions.map(s =>
-        s.id === feedback.sessionId
-          ? { ...s, feedbackSubmitted: true, feedbackSubmittedAt: feedback.createdAt }
-          : s
+      const created = await api.createSessionFeedback(feedback)
+      setSessionFeedbacks(prev => [...prev, created])
+      setSessions(prev => prev.map(s =>
+        s.id === created.sessionId ? { ...s, feedbackSubmitted: true, feedbackSubmittedAt: created.createdAt } : s
       ))
-      // Create notification for mentor
-      const notification: Notification = {
-        id: `notif-${Date.now()}`,
-        userId: feedback.mentorId,
+      // Not critical: the feedback record itself is the source of truth.
+      api.updateSession(created.sessionId, { feedbackSubmitted: true, feedbackSubmittedAt: created.createdAt })
+        .catch(error => console.error('Could not flag session feedback:', error))
+      notifyUser({
+        userId: created.mentorId,
         title: 'New Feedback Received',
-        message: `You received ${feedback.rating}-star feedback from a mentee`,
+        message: `You received ${created.rating}-star feedback from a mentee.`,
         type: 'feedback-received',
-        read: false,
-        relatedId: feedback.sessionId,
-        createdAt: new Date().toISOString()
-      }
-      setNotifications([notification, ...notifications])
-      // In a real app, you'd update the mentor's rating in the database
+        relatedId: created.sessionId
+      })
+      toast.success('Thanks! Your feedback was sent.')
+      return true
     } catch (error) {
-      console.error('Error adding session feedback:', error)
+      toast.error(errorMessage(error, 'Could not submit your feedback.'))
+      return false
     }
-  }
+  }, [notifyUser, toast])
 
-  const getMentorFeedbackStats = (mentorId: string): MentorFeedbackStats | null => {
+  const getMentorFeedbackStats = useCallback((mentorId: string): MentorFeedbackStats | null => {
     const mentorFeedbacks = sessionFeedbacks.filter(f => f.mentorId === mentorId)
     if (mentorFeedbacks.length === 0) return null
 
     const averageRating = mentorFeedbacks.reduce((sum, f) => sum + f.rating, 0) / mentorFeedbacks.length
-    const ratingDistribution = {
-      1: mentorFeedbacks.filter(f => f.rating === 1).length,
-      2: mentorFeedbacks.filter(f => f.rating === 2).length,
-      3: mentorFeedbacks.filter(f => f.rating === 3).length,
-      4: mentorFeedbacks.filter(f => f.rating === 4).length,
-      5: mentorFeedbacks.filter(f => f.rating === 5).length,
-    }
-    const recentFeedbacks = mentorFeedbacks
+    const count = (rating: number) => mentorFeedbacks.filter(f => f.rating === rating).length
+    const recentFeedbacks = [...mentorFeedbacks]
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
       .slice(0, 10)
 
@@ -515,42 +546,48 @@ export function AppProvider({ children }: { children: ReactNode }) {
       mentorId,
       averageRating: Math.round(averageRating * 10) / 10,
       totalFeedbacks: mentorFeedbacks.length,
-      ratingDistribution,
+      ratingDistribution: { 1: count(1), 2: count(2), 3: count(3), 4: count(4), 5: count(5) },
       recentFeedbacks
     }
-  }
+  }, [sessionFeedbacks])
 
-  const addMentorSessionNotes = (notes: MentorSessionNotes) => {
-    setMentorSessionNotes([...mentorSessionNotes, notes])
-  }
+  const addMentorSessionNotes = useCallback(async (notes: MentorSessionNotes) => {
+    try {
+      const created = await api.createMentorSessionNotes(notes)
+      setMentorSessionNotes(prev => [...prev.filter(n => n.sessionId !== created.sessionId), created])
+      toast.success('Session notes saved.')
+    } catch (error) {
+      toast.error(errorMessage(error, 'Could not save your notes.'))
+    }
+  }, [toast])
 
-  const updateMentorSessionNotes = (noteId: string, updates: Partial<MentorSessionNotes>) => {
-    setMentorSessionNotes(mentorSessionNotes.map(n =>
-      n.id === noteId
-        ? { ...n, ...updates, updatedAt: new Date().toISOString() }
-        : n
-    ))
-  }
+  const updateMentorSessionNotes = useCallback(async (noteId: string, updates: Partial<MentorSessionNotes>) => {
+    try {
+      const updated = await api.updateMentorSessionNotes(noteId, updates)
+      setMentorSessionNotes(prev => prev.map(n => n.id === noteId ? updated : n))
+      toast.success('Session notes saved.')
+    } catch (error) {
+      toast.error(errorMessage(error, 'Could not save your notes.'))
+    }
+  }, [toast])
 
-  const getMentorSessionNotes = (sessionId: string): MentorSessionNotes | null => {
+  const getMentorSessionNotes = useCallback((sessionId: string): MentorSessionNotes | null => {
     return mentorSessionNotes.find(n => n.sessionId === sessionId) || null
-  }
+  }, [mentorSessionNotes])
 
-  const addNotification = (notification: Notification) => {
-    setNotifications([notification, ...notifications])
-  }
+  const markNotificationAsRead = useCallback((notificationId: string) => {
+    setNotifications(prev => prev.map(n => n.id === notificationId ? { ...n, read: true } : n))
+    // Legacy in-memory entries have no stored record.
+    if (!notificationId.startsWith('notif-pending-')) {
+      api.markNotificationRead(notificationId).catch(error => console.error('Could not mark notification read:', error))
+    }
+  }, [])
 
-  const markNotificationAsRead = (notificationId: string) => {
-    setNotifications(notifications.map(n =>
-      n.id === notificationId ? { ...n, read: true } : n
-    ))
-  }
+  const getUnreadNotificationCount = useCallback((forUserId: string): number => {
+    return notifications.filter(n => n.userId === forUserId && !n.read).length
+  }, [notifications])
 
-  const getUnreadNotificationCount = (userId: string): number => {
-    return notifications.filter(n => n.userId === userId && !n.read).length
-  }
-
-  const getMentorStats = (mentorId: string): MentorStats | null => {
+  const getMentorStats = useCallback((mentorId: string): MentorStats | null => {
     const mentorSessions = sessions.filter(s => s.mentorId === mentorId)
     const mentorFeedbacks = sessionFeedbacks.filter(f => f.mentorId === mentorId)
 
@@ -560,29 +597,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
       ? mentorFeedbacks.reduce((sum, f) => sum + f.rating, 0) / mentorFeedbacks.length
       : 0
 
-    // Extract strength keywords from positive feedback
-    const strengthKeywords: string[] = []
-    mentorFeedbacks.forEach(f => {
-      const words = f.whatWentWell.toLowerCase().split(/\s+/)
-      strengthKeywords.push(...words.filter(w => w.length > 4))
-    })
+    const keywords = (texts: string[]) => {
+      const words = texts.flatMap(t => (t || '').toLowerCase().split(/[^a-z0-9']+/)).filter(w => w.length > 4)
+      return [...new Set(words)].slice(0, 10)
+    }
 
-    // Extract improvement keywords
-    const improvementKeywords: string[] = []
-    mentorFeedbacks.forEach(f => {
-      const words = f.whatToImprove.toLowerCase().split(/\s+/)
-      improvementKeywords.push(...words.filter(w => w.length > 4))
-    })
-
-    // Calculate sessions per week (last 4 weeks)
+    // Sessions per week over the last 4 weeks
     const fourWeeksAgo = new Date()
     fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28)
-    const recentSessions = mentorSessions.filter(s => new Date(s.date) >= fourWeeksAgo)
-    const sessionsPerWeek = recentSessions.length / 4
+    const recentSessions = mentorSessions.filter(s => {
+      const dt = getSessionDateTime(s)
+      return !!dt && dt >= fourWeeksAgo && dt.getTime() <= Date.now() && s.status !== 'CANCELLED'
+    })
 
     const completedCount = mentorSessions.filter(s => s.status === 'COMPLETED').length
     const feedbackResponseRate = completedCount > 0
-      ? (mentorFeedbacks.length / completedCount) * 100
+      ? Math.min(100, (mentorFeedbacks.length / completedCount) * 100)
       : 0
 
     return {
@@ -590,21 +620,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       averageRating: Math.round(averageRating * 10) / 10,
       totalSessions: mentorSessions.length,
       totalFeedbacks: mentorFeedbacks.length,
-      strengthKeywords: [...new Set(strengthKeywords)].slice(0, 10),
-      improvementKeywords: [...new Set(improvementKeywords)].slice(0, 10),
-      sessionsPerWeek: Math.round(sessionsPerWeek * 10) / 10,
+      strengthKeywords: keywords(mentorFeedbacks.map(f => f.whatWentWell)),
+      improvementKeywords: keywords(mentorFeedbacks.map(f => f.whatToImprove)),
+      sessionsPerWeek: Math.round((recentSessions.length / 4) * 10) / 10,
       feedbackResponseRate: Math.round(feedbackResponseRate),
       lastUpdated: new Date().toISOString()
     }
-  }
-
-  const DEFAULT_AVAILABILITY_SLOTS: MentorAvailability['slots'] = [
-    { dayOfWeek: 1, startTime: '09:00', endTime: '17:00' },
-    { dayOfWeek: 2, startTime: '09:00', endTime: '17:00' },
-    { dayOfWeek: 3, startTime: '09:00', endTime: '17:00' },
-    { dayOfWeek: 4, startTime: '09:00', endTime: '17:00' },
-    { dayOfWeek: 5, startTime: '09:00', endTime: '17:00' }
-  ]
+  }, [sessions, sessionFeedbacks])
 
   const getMentorAvailability = useCallback((mentorId: string): MentorAvailability => {
     const stored = mentorAvailabilities[mentorId]
@@ -618,6 +640,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [mentorAvailabilities])
 
+  /** Loads a mentor's timetable and existing bookings so slot suggestions are accurate for any mentor. */
+  const loadMentorAvailability = useCallback(async (mentorId: string) => {
+    const [availability, mentorSessions] = await Promise.all([
+      safe('availability', api.getMentorAvailability(mentorId), null),
+      safe('mentor sessions', api.listSessionsForUser(mentorId, 'mentor'), [] as Session[])
+    ])
+    if (availability) setMentorAvailabilities(prev => ({ ...prev, [mentorId]: availability }))
+    setMentorBookings(prev => ({ ...prev, [mentorId]: mentorSessions }))
+  }, [])
+
   const updateMentorAvailability = useCallback(async (mentorId: string, availability: MentorAvailability) => {
     const updated = { ...availability, mentorId, updatedAt: new Date().toISOString() }
     const saved = await api.updateMentorAvailability(mentorId, updated)
@@ -625,75 +657,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const getAvailableSlotsForMentor = useCallback((mentorId: string, dateStr: string, durationMinutes = 60): string[] => {
-    const availability = getMentorAvailability(mentorId)
-    const d = new Date(dateStr + 'T00:00:00')
-    const dayOfWeek = d.getDay()
-    const daySlots = availability.slots.filter(s => s.dayOfWeek === dayOfWeek)
-    if (daySlots.length === 0) return []
+    // Own sessions are the freshest copy; the rest come from the mentor's full booking list.
+    const own = sessions.filter(s => s.mentorId === mentorId)
+    const ownIds = new Set(own.map(s => s.id))
+    const others = (mentorBookings[mentorId] || []).filter(s => !ownIds.has(s.id))
+    return computeAvailableSlots(getMentorAvailability(mentorId), [...own, ...others], dateStr, durationMinutes)
+  }, [getMentorAvailability, sessions, mentorBookings])
 
-    const slots: string[] = []
-    const today = new Date()
-    const todayLocal = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
-    const isToday = dateStr === todayLocal
-
-    for (const range of daySlots) {
-      const [startH, startM] = range.startTime.split(':').map(Number)
-      const [endH, endM] = range.endTime.split(':').map(Number)
-      const startMinutes = startH * 60 + startM
-      const endMinutes = endH * 60 + endM
-
-      let current = startMinutes
-      while (current + durationMinutes <= endMinutes) {
-        const hour = Math.floor(current / 60)
-        const min = current % 60
-        const timeString = `${hour.toString().padStart(2, '0')}:${min.toString().padStart(2, '0')}`
-        if (isToday) {
-          const now = new Date()
-          const nowMinutes = now.getHours() * 60 + now.getMinutes()
-          if (current >= nowMinutes + 15) slots.push(timeString)
-        } else {
-          slots.push(timeString)
-        }
-        current += 15
-      }
-    }
-
-    const mentorSessions = sessions.filter(
-      s => s.mentorId === mentorId &&
-        (s.status === 'CONFIRMED' || s.status === 'PENDING') &&
-        !s.cancelledAt
-    )
-    // Block every 15-min slot that falls within any existing session's [start, start+duration)
-    const blockedSlots = new Set<string>()
-    mentorSessions
-      .filter(s => s.date.slice(0, 10) === dateStr)
-      .forEach(s => {
-        const startTime = s.time && s.time.length >= 5 ? s.time.slice(0, 5) : s.date.slice(11, 16)
-        const [startH, startM] = startTime.split(':').map(Number)
-        const startMinutes = startH * 60 + startM
-        const dur = s.duration ?? 60
-        const endMinutes = startMinutes + dur
-        for (let m = startMinutes; m < endMinutes; m += 15) {
-          const h = Math.floor(m / 60)
-          const min = m % 60
-          blockedSlots.add(`${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`)
-        }
-      })
-
-    return slots.filter(slot => {
-      const [slotH, slotM] = slot.split(':').map(Number)
-      const slotStartMinutes = slotH * 60 + slotM
-      for (let m = slotStartMinutes; m < slotStartMinutes + durationMinutes; m += 15) {
-        const h = Math.floor(m / 60)
-        const min = m % 60
-        const intervalKey = `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`
-        if (blockedSlots.has(intervalKey)) return false
-      }
-      return true
-    })
-  }, [getMentorAvailability, sessions])
-
-  const getMenteeSummaries = (mentorId: string): MenteeSummary[] => {
+  const getMenteeSummaries = useCallback((mentorId: string): MenteeSummary[] => {
     const mentorSessions = sessions.filter(s => s.mentorId === mentorId)
     const menteeIds = [...new Set(mentorSessions.map(s => s.menteeId))]
 
@@ -706,11 +677,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ? menteeFeedbacks.reduce((sum, f) => sum + f.rating, 0) / menteeFeedbacks.length
         : 0
 
-      const lastSession = completedSessions.sort((a, b) =>
+      const lastSession = [...completedSessions].sort((a, b) =>
         new Date(b.date).getTime() - new Date(a.date).getTime()
       )[0]
 
-      const mentee = menteeSessions[0]?.mentee
+      const mentee = menteeSessions.find(s => s.mentee)?.mentee
 
       return {
         menteeId,
@@ -721,7 +692,73 @@ export function AppProvider({ children }: { children: ReactNode }) {
         lastSessionDate: lastSession?.date
       }
     })
-  }
+  }, [sessions, sessionFeedbacks])
+
+  const toggleSavedMentor = useCallback(async (mentorId: string) => {
+    const me = stateRef.current.currentUser
+    if (!me) {
+      toast.info('Sign in to save mentors.')
+      return
+    }
+    const wasSaved = stateRef.current.savedMentorIds.includes(mentorId)
+    setSavedMentorIds(prev => wasSaved ? prev.filter(id => id !== mentorId) : [...prev, mentorId])
+    try {
+      await api.setMentorSaved(me.id, mentorId, !wasSaved)
+    } catch (error) {
+      setSavedMentorIds(prev => wasSaved ? [...prev, mentorId] : prev.filter(id => id !== mentorId))
+      toast.error(errorMessage(error, 'Could not update your saved mentors.'))
+    }
+  }, [toast])
+
+  const requestMentorship = useCallback(async (mentor: User, message: string): Promise<boolean> => {
+    const me = stateRef.current.currentUser
+    if (!me) {
+      toast.info('Sign in to request mentorship.')
+      return false
+    }
+    try {
+      const request = await api.createMentorshipRequest({ menteeId: me.id, mentorId: mentor.id, message })
+      setMentorshipRequests(prev => [request, ...prev])
+      notifyUser({
+        userId: mentor.id,
+        title: 'New mentorship request',
+        message: `${me.name} would like you to mentor them: "${message.slice(0, 200)}"`,
+        type: 'mentorship-request',
+        relatedId: request.id
+      })
+      toast.success(`Request sent to ${mentor.name}.`)
+      return true
+    } catch (error) {
+      toast.error(errorMessage(error, 'Could not send your request.'))
+      return false
+    }
+  }, [notifyUser, toast])
+
+  const respondToMentorshipRequest = useCallback(async (requestId: string, status: 'ACCEPTED' | 'DECLINED') => {
+    const me = stateRef.current.currentUser
+    try {
+      const updated = await api.updateMentorshipRequest(requestId, status)
+      setMentorshipRequests(prev => prev.map(r => r.id === requestId ? updated : r))
+      notifyUser({
+        userId: updated.menteeId,
+        title: status === 'ACCEPTED' ? 'Mentorship request accepted' : 'Mentorship request declined',
+        message: status === 'ACCEPTED'
+          ? `${me?.name || 'Your mentor'} accepted your mentorship request. Book a session to get started.`
+          : `${me?.name || 'The mentor'} is not able to take on your request right now.`,
+        type: 'mentorship-request',
+        relatedId: requestId
+      })
+    } catch (error) {
+      toast.error(errorMessage(error, 'Could not update the request.'))
+    }
+  }, [notifyUser, toast])
+
+  const badges = useMemo(
+    () => (userId ? computeBadges(userId, { completions: habitCompletions, reflections, journeys }) : []),
+    [userId, habitCompletions, reflections, journeys]
+  )
+
+  const loading = authLoading || dataLoading
 
   return (
     <AppContext.Provider value={{
@@ -730,10 +767,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       refreshCurrentUser,
       logout,
       loading,
+      authLoading,
       venues,
       sessions,
       events,
-      ratings,
       goals,
       habits,
       habitCompletions,
@@ -743,38 +780,41 @@ export function AppProvider({ children }: { children: ReactNode }) {
       sessionFeedbacks,
       mentorSessionNotes,
       notifications,
+      savedMentorIds,
+      mentorshipRequests,
       addSession,
       updateSession,
-      addEvent,
-      addRating,
+      toggleEventAttendance,
       addGoal,
       updateGoal,
       removeGoal,
       addHabit,
       updateHabit,
+      removeHabit,
       toggleHabitCompletion,
       addReflection,
       addJourney,
+      removeJourney,
       addReactionToJourney,
       addCommentToJourney,
-      addBadge,
       addSessionFeedback,
       getMentorFeedbackStats,
       addMentorSessionNotes,
       updateMentorSessionNotes,
       getMentorSessionNotes,
-      addNotification,
       markNotificationAsRead,
       getUnreadNotificationCount,
       getMentorStats,
       getMenteeSummaries,
       getMentorAvailability,
+      loadMentorAvailability,
       updateMentorAvailability,
-      getAvailableSlotsForMentor
+      getAvailableSlotsForMentor,
+      toggleSavedMentor,
+      requestMentorship,
+      respondToMentorshipRequest
     }}>
       {children}
     </AppContext.Provider>
   )
 }
-
-

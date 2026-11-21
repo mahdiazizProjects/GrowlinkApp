@@ -1,8 +1,22 @@
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowRight, Users, MapPin, Calendar, Star, CheckCircle, Sparkles } from 'lucide-react'
-import { mockMentors } from '../data/mockData'
+import * as api from '../services/api'
+import type { User } from '../types'
 
 export default function Home() {
+  const [mentors, setMentors] = useState<User[]>([])
+  const [mentorsLoaded, setMentorsLoaded] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    api.listMentors()
+      .then(list => { if (!cancelled) setMentors(list.slice(0, 4)) })
+      .catch(error => console.error('Could not load featured mentors:', error))
+      .finally(() => { if (!cancelled) setMentorsLoaded(true) })
+    return () => { cancelled = true }
+  }, [])
+
   return (
     <div className="bg-white">
       {/* Hero Section */}
@@ -129,19 +143,30 @@ export default function Home() {
               Hand-picked experts ready to guide your journey
             </p>
           </div>
+          {mentorsLoaded && mentors.length === 0 && (
+            <p className="text-center text-gray-500">
+              Mentors are joining soon. <Link to="/become-mentor" className="text-primary-600 font-semibold hover:text-primary-700">Become the first</Link>.
+            </p>
+          )}
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {mockMentors.slice(0, 4).map((mentor) => (
+            {mentors.map((mentor) => (
               <Link
                 key={mentor.id}
                 to={`/mentors/${mentor.id}`}
                 className="bg-white rounded-xl shadow-lg p-6 hover:shadow-xl transition-all duration-300 hover:-translate-y-1 border border-gray-100"
               >
                 <div className="flex items-center space-x-4 mb-4">
-                  <img
-                    src={mentor.avatar}
-                    alt={mentor.name}
-                    className="w-16 h-16 rounded-full object-cover"
-                  />
+                  {mentor.avatar ? (
+                    <img
+                      src={mentor.avatar}
+                      alt={mentor.name}
+                      className="w-16 h-16 rounded-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-16 h-16 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-white text-xl font-bold">
+                      {mentor.name.charAt(0)}
+                    </div>
+                  )}
                   <div>
                     <h3 className="font-semibold text-gray-900">{mentor.name}</h3>
                     {mentor.verified && (
@@ -154,10 +179,14 @@ export default function Home() {
                 </div>
                 <p className="text-sm text-gray-600 mb-4 line-clamp-2">{mentor.bio}</p>
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-1">
-                    <Star className="text-gold-500 fill-gold-500" size={16} />
-                    <span className="text-sm font-semibold">{mentor.rating}</span>
-                  </div>
+                  {mentor.rating ? (
+                    <div className="flex items-center space-x-1">
+                      <Star className="text-gold-500 fill-gold-500" size={16} />
+                      <span className="text-sm font-semibold">{mentor.rating.toFixed(1)}</span>
+                    </div>
+                  ) : (
+                    <span className="text-xs text-gray-500">New mentor</span>
+                  )}
                   {mentor.membershipTier === 'exclusive' && (
                     <span className="px-2 py-1 bg-gold-100 text-gold-800 rounded text-xs font-semibold">
                       Exclusive

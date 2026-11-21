@@ -27,9 +27,10 @@ export default function MentorProfile() {
         setError(null)
         
         // Fetch mentor and sessions in parallel
-        const [mentorData, sessionsData] = await Promise.all([
+        const [mentorData, sessionsData, feedbackData] = await Promise.all([
           api.getUser(id),
-          api.listSessionsForUser(id, 'mentor')
+          api.listSessionsForUser(id, 'mentor'),
+          api.listSessionFeedbackForMentor(id).catch(() => [])
         ])
         
         if (!mentorData) {
@@ -37,7 +38,10 @@ export default function MentorProfile() {
         } else if (mentorData.role !== 'MENTOR' && mentorData.role !== 'mentor' && mentorData.role !== 'BOTH') {
           setError('User is not a mentor')
         } else {
-          setMentor(mentorData)
+          const ratings = feedbackData.map(f => f.rating).filter(r => r > 0)
+          setMentor(ratings.length > 0
+            ? { ...mentorData, rating: Math.round((ratings.reduce((a, b) => a + b, 0) / ratings.length) * 10) / 10, reviewCount: ratings.length }
+            : mentorData)
           setSessions(sessionsData || [])
         }
       } catch (err) {

@@ -5,9 +5,13 @@ import * as api from '../services/api'
 import IdentityBuilderModal from '../components/habits/IdentityBuilderModal'
 import ActionPlanBuilder from '../components/habits/ActionPlanBuilder'
 import { Goal, Habit } from '../types'
+import { useToast, errorMessage } from '../components/ui/Toast'
+
+type HabitDraft = Omit<Habit, 'id' | 'createdAt' | 'updatedAt'> & { id?: string; actionItemId?: string }
 
 export default function Goals() {
-  const { currentUser, goals, habits, addGoal, removeGoal, addHabit } = useApp()
+  const { currentUser, goals, habits, addGoal, updateGoal, removeGoal, addHabit, updateHabit, removeHabit } = useApp()
+  const toast = useToast()
   const [isIdentityModalOpen, setIsIdentityModalOpen] = useState(false)
   const [selectedGoal, setSelectedGoal] = useState<Goal | null>(null)
   const [showActionPlan, setShowActionPlan] = useState(false)
@@ -21,7 +25,7 @@ export default function Goals() {
       try {
         const actionPlans = await api.listActionPlans(currentUser.id, currentUser.id)
         const plansMap: Record<string, string> = {}
-        const unmatchedPlans: Array<{ plan: any; items: any[] }> = []
+        const unmatchedPlans: Array<{ plan: { id: string }; items: { title: string }[] }> = []
         
         // First pass: Match action plans to goals by title pattern
         for (const plan of actionPlans) {
@@ -97,182 +101,106 @@ export default function Goals() {
   const activeGoals = userGoals.filter(g => g.status === 'active')
   const draftGoals = userGoals.filter(g => g.status === 'draft')
 
-  const handleCreateGoal = (goalData: Omit<Goal, 'id' | 'createdAt' | 'updatedAt'>) => {
-    const newGoal: Goal = {
-      ...goalData,
-      id: `goal-${Date.now()}`,
-      userId: currentUser.id,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    }
-    addGoal(newGoal)
+  const handleCreateGoal = async (goalData: Omit<Goal, 'id' | 'createdAt' | 'updatedAt'>) => {
+    const created = await addGoal({ ...goalData, id: '', userId: currentUser.id })
+    if (created) toast.success('Goal created. Add an action plan to make it active.')
   }
 
-  const handleSaveActionPlan = async (habitsData: Omit<Habit, 'id' | 'createdAt' | 'updatedAt'>[], existingActionPlanId?: string) => {
+  const forgetPlan = (goalId: string) => {
+    setGoalActionPlans(prev => {
+      const updated = { ...prev }
+      delete updated[goalId]
+      return updated
+    })
+  }
+
+  /** Keeps the goal's ActionPlan/ActionItems in step with its habits. Returns the plan id, if one remains. */
+  const syncActionPlan = async (goal: Goal, habitsData: HabitDraft[], existingActionPlanId?: string): Promise<string | undefined> => {
+    const toItem = (h: HabitDraft) => ({
+      title: h.title,
+      description: h.description,
+      type: 'DO' as const,
+      frequency: h.frequency === 'weekly' ? 'WEEKLY' as const : 'DAILY' as const,
+      status: 'ACTIVE' as const
+    })
+
     if (habitsData.length === 0) {
-      alert('Please add at least one habit with a title and duration')
-      return
+      if (existingActionPlanId) await api.deleteActionPlan(existingActionPlanId)
+      return undefined
     }
 
-    if (!currentUser?.id || !selectedGoal) {
-      alert('Please sign in and select a goal')
+    if (!existingActionPlanId) {
+      const plan = await api.createActionPlan({
+        creatorId: currentUser.id,
+        assigneeId: currentUser.id,
+        title: `Action Plan for: ${goal.title}`,
+        description: `Action plan for goal: ${goal.title}`,
+        status: 'ACTIVE'
+      })
+      await Promise.all(habitsData.map(h => api.createActionItem({ planId: plan.id, ...toItem(h) })))
+      return plan.id
+    }
+
+    const existingItems = await api.listActionItems(existingActionPlanId)
+    const kept = new Set<string>()
+    for (const h of habitsData) {
+      const match =
+        existingItems.find(i => i.id === h.actionItemId && !kept.has(i.id)) ||
+        existingItems.find(i => i.title === h.title && !kept.has(i.id))
+      if (match) {
+        kept.add(match.id)
+        await api.updateActionItem(match.id, toItem(h))
+      } else {
+        await api.createActionItem({ planId: existingActionPlanId, ...toItem(h) })
+      }
+    }
+    await Promise.all(existingItems.filter(i => !kept.has(i.id)).map(i => api.deleteActionItem(i.id)))
+    return existingActionPlanId
+  }
+
+  const handleSaveActionPlan = async (habitsData: HabitDraft[], existingActionPlanId?: string) => {
+    if (!selectedGoal) return
+    const goal = selectedGoal
+    if (habitsData.length === 0 && !existingActionPlanId && getGoalHabits(goal.id).length === 0) {
+      toast.error('Add at least one habit with a title and duration.')
       return
     }
 
     try {
-      let actionPlanId: string
-      
-      if (existingActionPlanId) {
-        // Update existing action plan
-        actionPlanId = existingActionPlanId
-
-        // Get existing action items
-        const existingItems = await api.listActionItems(actionPlanId)
-        const existingItemMap = new Map(existingItems.map((item: { id: string }) => [item.id, item]))
-        const existingItemIds = new Set(existingItems.map((item: { id: string }) => item.id))
-        
-        // Track which items are being kept (matched by actionItemId)
-        const keptItemIds = new Set<string>()
-        
-        // Update or create action items
-        const updatePromises = habitsData.map(async (habitData) => {
-          // Check if this habit has an actionItemId (from existing plan)
-          const habitWithId = habitData as any
-          const actionItemId = habitWithId.actionItemId
-          
-          if (actionItemId && existingItemMap.has(actionItemId)) {
-            // Update existing item
-            await api.updateActionItem(actionItemId, {
-              title: habitData.title,
-              description: habitData.description,
-              type: 'DO',
-              frequency: habitData.frequency === 'weekly' ? 'WEEKLY' : 'DAILY',
-              status: 'ACTIVE',
-            })
-            keptItemIds.add(actionItemId)
-          } else {
-            // Create new item
-            await api.createActionItem({
-              planId: actionPlanId,
-              title: habitData.title,
-              description: habitData.description,
-              type: 'DO',
-              frequency: habitData.frequency === 'weekly' ? 'WEEKLY' : 'DAILY',
-              status: 'ACTIVE',
-            })
-          }
-        })
-        
-        await Promise.all(updatePromises)
-        
-        // Delete items that were removed (not in keptItemIds)
-        const itemsToDelete = Array.from(existingItemIds).filter((id: string) => !keptItemIds.has(id))
-        if (itemsToDelete.length > 0) {
-          const deletePromises = itemsToDelete.map(itemId => 
-            api.deleteActionItem(itemId)
-          )
-          await Promise.all(deletePromises)
-        }
-        
-        // If all habits were removed (no habits saved), delete the entire plan
-        if (habitsData.length === 0) {
-          await api.deleteActionPlan(actionPlanId)
-          setGoalActionPlans(prev => {
-            const updated = { ...prev }
-            delete updated[selectedGoal.id]
-            return updated
-          })
-          setShowActionPlan(false)
-          setSelectedGoal(null)
-          alert('Action plan deleted successfully!')
-          return
-        }
-        
-        // Also check: if we kept no items and created no new items, the plan is empty - delete it
-        // This handles the case where user removes all habits but the check above didn't catch it
-        const remainingItems = await api.listActionItems(actionPlanId)
-        if (remainingItems.length === 0) {
-          await api.deleteActionPlan(actionPlanId)
-          setGoalActionPlans(prev => {
-            const updated = { ...prev }
-            delete updated[selectedGoal.id]
-            return updated
-          })
-          setShowActionPlan(false)
-          setSelectedGoal(null)
-          alert('Action plan deleted successfully!')
-          return
-        }
-        
-      } else {
-        // Create new action plan
-        const actionPlanTitle = `Action Plan for: ${selectedGoal.title}`
-        const actionPlan = await api.createActionPlan({
-          creatorId: currentUser.id,
-          assigneeId: currentUser.id,
-          title: actionPlanTitle,
-          description: `Action plan for goal: ${selectedGoal.title}`,
-          status: 'ACTIVE',
-        })
-        
-        if (!actionPlan) {
-          throw new Error('Failed to create action plan')
-        }
-        
-        actionPlanId = actionPlan.id
-
-        // Create ActionItems for each habit
-        const actionItemPromises = habitsData.map(async (habitData) => {
-          const actionItem = await api.createActionItem({
-            planId: actionPlanId,
-            title: habitData.title,
-            description: habitData.description,
-            type: 'DO',
-            frequency: habitData.frequency === 'weekly' ? 'WEEKLY' : 'DAILY',
-            status: 'ACTIVE',
-          })
-          return actionItem
-        })
-        
-        await Promise.all(actionItemPromises)
-        
-        // Update goal action plans map
-        setGoalActionPlans(prev => ({
-          ...prev,
-          [selectedGoal.id]: actionPlanId
-        }))
-      }
-
-      // Also create/update habits (stored as Todos) for backward compatibility
-      const habitPromises = habitsData.map(async (habitData, index) => {
-        const existingHabit = habits.find(h => h.goalId === selectedGoal.id && h.title === habitData.title)
-        if (existingHabit) {
-          // Update existing habit if needed
-          return existingHabit
+      // 1. Habit records are what the habit tracker reads.
+      const current = getGoalHabits(goal.id)
+      const kept = new Set<string>()
+      for (const h of habitsData) {
+        const { id, actionItemId: _actionItemId, ...fields } = h
+        const match =
+          current.find(c => c.id === id && !kept.has(c.id)) ||
+          current.find(c => c.title === h.title && !kept.has(c.id))
+        if (match) {
+          kept.add(match.id)
+          await updateHabit(match.id, fields)
         } else {
-          // Create new habit
-          const newHabit: Habit & { userId?: string } = {
-            ...habitData,
-            userId: currentUser.id,
-            id: `habit-${Date.now()}-${index}`,
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-          }
-          return addHabit(newHabit as Habit)
+          const created = await addHabit({ ...fields, userId: currentUser.id, id: '', createdAt: '', updatedAt: '' })
+          if (!created) throw new Error('A habit could not be saved.')
+          kept.add(created.id)
         }
-      })
-      
-      await Promise.all(habitPromises)
-      
-      // Note: status field removed from Goal schema, so we don't update it here
-      // Goals are considered active once they have an action plan
-      
+      }
+      await Promise.all(current.filter(c => !kept.has(c.id)).map(c => removeHabit(c.id)))
+
+      // 2. Mirror into the action plan.
+      const planId = await syncActionPlan(goal, habitsData, existingActionPlanId)
+      if (planId) setGoalActionPlans(prev => ({ ...prev, [goal.id]: planId }))
+      else forgetPlan(goal.id)
+
+      // 3. A goal is active once it has a plan, and a draft again without one.
+      const nextStatus = habitsData.length > 0 ? 'active' : 'draft'
+      if (goal.status !== nextStatus) await updateGoal(goal.id, { status: nextStatus })
+
       setShowActionPlan(false)
       setSelectedGoal(null)
-      alert('Action plan saved successfully!')
+      toast.success(habitsData.length > 0 ? 'Action plan saved.' : 'Action plan removed.')
     } catch (error) {
       console.error('Error saving action plan:', error)
-      alert('Failed to save action plan: ' + (error instanceof Error ? error.message : 'Unknown error'))
+      toast.error(errorMessage(error, 'Could not save the action plan.'))
     }
   }
 
@@ -281,75 +209,41 @@ export default function Goals() {
     setShowActionPlan(true)
   }
 
+  const deletePlanAndHabits = async (goal: Goal, actionPlanId?: string) => {
+    if (actionPlanId) await api.deleteActionPlan(actionPlanId)
+    await Promise.all(getGoalHabits(goal.id).map(h => removeHabit(h.id)))
+    forgetPlan(goal.id)
+    if (goal.status !== 'draft') await updateGoal(goal.id, { status: 'draft' })
+  }
+
   const handleDeleteActionPlan = async (goal: Goal) => {
-    const actionPlanId = goalActionPlans[goal.id]
-
-    if (!actionPlanId) {
-      alert('No action plan found to delete')
+    if (!confirm('Delete this action plan? This removes all habits for this goal and their history.')) {
       return
     }
-
-    if (!confirm('Are you sure you want to delete this action plan? This will remove all habits associated with it.')) {
-      return
-    }
-
     try {
-      const success = await api.deleteActionPlan(actionPlanId)
-
-      if (success) {
-        setGoalActionPlans(prev => {
-          const updated = { ...prev }
-          delete updated[goal.id]
-          return updated
-        })
-        
-        // Note: Habits are stored separately and will be cleaned up when the action plan is deleted
-        // The habits array in context is for backward compatibility with Todo model
-        
-        alert('Action plan deleted successfully!')
-      } else {
-        throw new Error('Failed to delete action plan - API returned false')
-      }
+      await deletePlanAndHabits(goal, goalActionPlans[goal.id])
+      toast.success('Action plan deleted.')
     } catch (error) {
       console.error('Error deleting action plan:', error)
-      alert('Failed to delete action plan: ' + (error instanceof Error ? error.message : 'Unknown error'))
+      toast.error(errorMessage(error, 'Could not delete the action plan.'))
     }
   }
 
   const handleDeleteGoal = async (goal: Goal) => {
-    if (!confirm(`Are you sure you want to delete the goal "${goal.title}"? This will also delete any associated action plans and habits.`)) {
+    if (!confirm(`Delete the goal "${goal.title}"? This also deletes its action plan and habits.`)) {
       return
     }
-
     try {
-      // First, delete associated action plan if it exists
       const actionPlanId = goalActionPlans[goal.id]
-      if (actionPlanId) {
-        await api.deleteActionPlan(actionPlanId)
-      }
-
-      const success = await api.deleteGoal(goal.id)
-      
-      if (success) {
-        // Remove from goal action plans map
-        if (actionPlanId) {
-          setGoalActionPlans(prev => {
-            const updated = { ...prev }
-            delete updated[goal.id]
-            return updated
-          })
-        }
-        
-        // Remove goal from context (this will also remove associated habits)
-        await removeGoal(goal.id)
-        
-        alert('Goal deleted successfully!')
-      } else {
-        throw new Error('Failed to delete goal')
+      if (actionPlanId) await api.deleteActionPlan(actionPlanId)
+      const removed = await removeGoal(goal.id)
+      if (removed) {
+        forgetPlan(goal.id)
+        toast.success('Goal deleted.')
       }
     } catch (error) {
       console.error('Error deleting goal:', error)
-      alert('Failed to delete goal: ' + (error instanceof Error ? error.message : 'Unknown error'))
+      toast.error(errorMessage(error, 'Could not delete the goal.'))
     }
   }
 
@@ -412,7 +306,7 @@ export default function Goals() {
                         {goalHabits.length} habit{goalHabits.length !== 1 ? 's' : ''} defined
                       </div>
                       <div className="flex gap-2">
-                        {goalActionPlans[goal.id] && (
+                        {(goalActionPlans[goal.id] || goalHabits.length > 0) && (
                           <button
                             onClick={() => handleDeleteActionPlan(goal)}
                             className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 transition-colors flex items-center gap-2"
@@ -425,7 +319,7 @@ export default function Goals() {
                           onClick={() => handleCreateActionPlan(goal)}
                           className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-semibold hover:bg-primary-700 transition-colors"
                         >
-                          {goalActionPlans[goal.id] ? 'Edit Habits' : 'Manage Habits'}
+                          {goalActionPlans[goal.id] || goalHabits.length > 0 ? 'Edit Habits' : 'Add Habits'}
                         </button>
                       </div>
                     </div>
@@ -471,7 +365,7 @@ export default function Goals() {
                         {goalHabits.length === 0 ? 'No habits yet' : `${goalHabits.length} habit${goalHabits.length !== 1 ? 's' : ''}`}
                       </div>
                       <div className="flex gap-2">
-                        {goalActionPlans[goal.id] && (
+                        {(goalActionPlans[goal.id] || goalHabits.length > 0) && (
                           <button
                             onClick={() => handleDeleteActionPlan(goal)}
                             className="px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 transition-colors flex items-center gap-2"
@@ -529,22 +423,13 @@ export default function Goals() {
                 onSave={handleSaveActionPlan}
                 onDelete={async (actionPlanId) => {
                   try {
-                    const success = await api.deleteActionPlan(actionPlanId)
-                    if (success) {
-                      setGoalActionPlans(prev => {
-                        const updated = { ...prev }
-                        delete updated[selectedGoal.id]
-                        return updated
-                      })
-                      alert('Action plan deleted successfully!')
-                      setShowActionPlan(false)
-                      setSelectedGoal(null)
-                    } else {
-                      throw new Error('Failed to delete action plan')
-                    }
+                    await deletePlanAndHabits(selectedGoal, actionPlanId)
+                    toast.success('Action plan deleted.')
+                    setShowActionPlan(false)
+                    setSelectedGoal(null)
                   } catch (error) {
                     console.error('Error deleting action plan:', error)
-                    alert('Failed to delete action plan: ' + (error instanceof Error ? error.message : 'Unknown error'))
+                    toast.error(errorMessage(error, 'Could not delete the action plan.'))
                   }
                 }}
                 onClose={() => {

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { MessageSquare, User } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import FeedbackPrompt from '../components/feedback/FeedbackPrompt'
+import MentorshipRequests from '../components/mentor/MentorshipRequests'
 import SessionFeedbackForm from '../components/feedback/SessionFeedbackForm'
 import MentorFeedbackView from '../components/feedback/MentorFeedbackView'
 import SessionDetailModal from '../components/sessions/SessionDetailModal'
@@ -88,25 +89,29 @@ export default function Dashboard() {
   }
 
   const user = currentUser
+  // Dialogs show the live copy of a session, so status changes appear immediately.
+  const live = (snapshot: Session | null) => (snapshot ? sessions.find(s => s.id === snapshot.id) ?? snapshot : null)
+  const liveMentorSession = live(selectedMentorSession)
+  const liveDetailSession = live(selectedSessionForDetail)
   const normalizedRole = user.role?.toLowerCase()
 
   // Handle feedback submission
-  const handleFeedbackSubmit = (feedbackData: Omit<SessionFeedback, 'id' | 'createdAt' | 'updatedAt'>) => {
+  const handleFeedbackSubmit = async (feedbackData: Omit<SessionFeedback, 'id' | 'createdAt' | 'updatedAt'>) => {
     const newFeedback: SessionFeedback = {
       ...feedbackData,
-      id: `feedback-${Date.now()}`,
+      id: '',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     }
-    addSessionFeedback(newFeedback)
-    setSelectedSessionForFeedback(null)
+    // Keep the form open (with the user's text) if saving fails.
+    if (await addSessionFeedback(newFeedback)) setSelectedSessionForFeedback(null)
   }
 
   // Handle mentor session notes
   const handleSaveMentorNotes = (notesData: Omit<MentorSessionNotes, 'id' | 'createdAt' | 'updatedAt'>) => {
     const newNotes: MentorSessionNotes = {
       ...notesData,
-      id: `notes-${Date.now()}`,
+      id: '',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     }
@@ -146,6 +151,8 @@ export default function Dashboard() {
               }}
             />
           </div>
+
+          <MentorshipRequests />
 
           {/* Tab Navigation */}
           <div className="mb-6 flex gap-2 border-b border-gray-200">
@@ -243,7 +250,7 @@ export default function Dashboard() {
           {selectedMentorSession && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
               <MentorSessionDetailModal
-                session={selectedMentorSession}
+                session={liveMentorSession!}
                 feedback={sessionFeedbacks.find(f => f.sessionId === selectedMentorSession.id)}
                 existingNotes={getMentorSessionNotes(selectedMentorSession.id)}
                 onClose={() => setSelectedMentorSession(null)}
@@ -329,7 +336,7 @@ export default function Dashboard() {
       {selectedSessionForDetail && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <SessionDetailModal
-            session={selectedSessionForDetail}
+            session={liveDetailSession!}
             onClose={() => setSelectedSessionForDetail(null)}
             onLeaveFeedback={() => {
               setSelectedSessionForDetail(null)

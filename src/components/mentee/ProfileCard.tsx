@@ -1,13 +1,19 @@
 import { useState } from 'react'
 import { User } from '../../types'
 import { Edit2, Check, X } from 'lucide-react'
+import { useApp } from '../../context/AppContext'
+import * as api from '../../services/api'
+import { useToast, errorMessage } from '../ui/Toast'
 
 interface ProfileCardProps {
   user: User
 }
 
 export default function ProfileCard({ user }: ProfileCardProps) {
+  const { setCurrentUser } = useApp()
+  const toast = useToast()
   const [isEditing, setIsEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [editedUser, setEditedUser] = useState({
     name: user.name,
     title: user.title || '',
@@ -15,10 +21,27 @@ export default function ProfileCard({ user }: ProfileCardProps) {
     avatar: user.avatar || ''
   })
 
-  const handleSave = () => {
-    // TODO: Implement save via GraphQL mutation
-    setIsEditing(false)
-    // Update user in context
+  const handleSave = async () => {
+    if (!editedUser.name.trim()) {
+      toast.error('Your name cannot be empty.')
+      return
+    }
+    setSaving(true)
+    try {
+      const updated = await api.updateUser(user.id, {
+        name: editedUser.name.trim(),
+        title: editedUser.title.trim(),
+        bio: editedUser.bio.trim(),
+        avatar: editedUser.avatar.trim()
+      })
+      if (updated) setCurrentUser(updated)
+      setIsEditing(false)
+      toast.success('Profile updated.')
+    } catch (error) {
+      toast.error(errorMessage(error, 'Could not save your profile.'))
+    } finally {
+      setSaving(false)
+    }
   }
 
   const handleCancel = () => {
@@ -61,6 +84,7 @@ export default function ProfileCard({ user }: ProfileCardProps) {
               <div className="flex gap-2">
                 <button
                   onClick={handleSave}
+                  disabled={saving}
                   className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors"
                 >
                   <Check size={16} />

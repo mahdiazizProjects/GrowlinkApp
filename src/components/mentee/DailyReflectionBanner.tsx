@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { toLocalDateString } from '../../utils/availability'
 import { useApp } from '../../context/AppContext'
 import { Reflection } from '../../types'
 import { Save, Calendar } from 'lucide-react'
@@ -22,18 +23,21 @@ export default function DailyReflectionBanner({ userId }: DailyReflectionBannerP
   const [text, setText] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
 
   // Check if reflection already exists for today
-  const today = new Date().toISOString().split('T')[0]
+  // Local calendar day; toISOString() is UTC and would roll over to "tomorrow" in the evening.
+  const today = toLocalDateString(new Date())
   const todayReflection = reflections.find(
     r => r.userId === userId && r.date === today
   )
 
   const handleSave = async () => {
     if (!selectedMood && !text.trim()) {
-      alert('Please add text or choose a mood')
+      setFormError('Add a few words or choose a mood.')
       return
     }
+    setFormError(null)
 
     // Ensure mood is set - default to NEUTRAL if not selected but text is provided
     const moodValue = selectedMood || 'NEUTRAL'
@@ -52,7 +56,8 @@ export default function DailyReflectionBanner({ userId }: DailyReflectionBannerP
         updatedAt: new Date().toISOString()
       }
 
-      addReflection(reflection)
+      const saved = await addReflection(reflection)
+      if (!saved) return
       setSaveSuccess(true)
       setText('')
       setSelectedMood(null)
@@ -61,7 +66,7 @@ export default function DailyReflectionBanner({ userId }: DailyReflectionBannerP
       setTimeout(() => setSaveSuccess(false), 3000)
     } catch (error) {
       console.error('Failed to save reflection:', error)
-      alert('Save failed — please retry')
+      setFormError('Save failed. Please try again.')
     } finally {
       setIsSaving(false)
     }
@@ -146,6 +151,7 @@ export default function DailyReflectionBanner({ userId }: DailyReflectionBannerP
           <p className="text-xs text-gray-500">
             {!selectedMood && !text.trim() && 'Please add text or choose a mood'}
           </p>
+          {formError && <p role="alert" className="text-sm text-red-600">{formError}</p>}
           <button
             onClick={handleSave}
             disabled={isSaving || (!selectedMood && !text.trim())}

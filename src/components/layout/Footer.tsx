@@ -59,7 +59,7 @@ export default function Footer() {
               </a>
             </div>
             <p className="text-xs text-gray-500">
-              © 2024 GrowLink. All rights reserved.
+              © {new Date().getFullYear()} GrowLink. All rights reserved.
             </p>
           </div>
         </div>

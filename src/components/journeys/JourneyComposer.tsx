@@ -145,7 +145,7 @@ export default function JourneyComposer({
           {MOODS.map((mood) => (
             <button
               key={mood.value}
-              onClick={() => setSelectedMood(mood.value as any)}
+              onClick={() => setSelectedMood(mood.value as typeof selectedMood)}
               className={`flex flex-col items-center gap-1 p-3 rounded-lg border-2 transition-all ${
                 selectedMood === mood.value
                   ? 'border-purple-500 bg-purple-50'
@@ -243,7 +243,7 @@ export default function JourneyComposer({
                 <button
                   key={option.value}
                   onClick={() => {
-                    setVisibility(option.value as any)
+                    setVisibility(option.value as typeof visibility)
                     setShowVisibilityMenu(false)
                     if (option.value !== 'selected') {
                       setSelectedMentorIds([])

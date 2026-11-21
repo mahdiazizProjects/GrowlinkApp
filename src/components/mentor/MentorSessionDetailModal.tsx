@@ -81,7 +81,8 @@ export default function MentorSessionDetailModal({
   useEffect(() => {
     if (!onUpdateSession || !isPending || !isPast || hasAutoCancelled.current) return
     hasAutoCancelled.current = true
-    onUpdateSession(session.id, { status: 'CANCELLED' }).catch(() => {})
+    onUpdateSession(session.id, { status: 'CANCELLED', cancelledBy: 'system', cancelledAt: new Date().toISOString() })
+      .catch(error => console.error('Could not expire the session request:', error))
   }, [session.id, isPending, isPast, onUpdateSession])
 
   const handleUpdateStatus = async (newStatus: 'CONFIRMED' | 'COMPLETED' | 'CANCELLED') => {

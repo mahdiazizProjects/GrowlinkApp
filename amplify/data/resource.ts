@@ -38,6 +38,16 @@ const schema = a.schema({
     status: a.enum(['PENDING', 'CONFIRMED', 'COMPLETED', 'CANCELLED']),
     notes: a.string(),
     meetingLink: a.string(),
+    type: a.enum(['VIRTUAL', 'IN_PERSON']),
+    venueId: a.id(),
+    topic: a.string(),
+    cancelledAt: a.datetime(),
+    cancelledBy: a.enum(['MENTOR', 'MENTEE', 'SYSTEM']),
+    cancellationReason: a.string(),
+    cancellationRequestedAt: a.datetime(),
+    menteeAcceptedCancellation: a.boolean(),
+    feedbackSubmitted: a.boolean(),
+    feedbackSubmittedAt: a.datetime(),
   }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
 
   Reflection: a.model({
@@ -59,6 +69,9 @@ const schema = a.schema({
     category: a.string(),
     progress: a.integer(),
     dueDate: a.date(),
+    status: a.enum(['DRAFT', 'PENDING_APPROVAL', 'ACTIVE', 'COMPLETED', 'ARCHIVED']),
+    identity: a.string(),
+    mentorId: a.id(),
     todos: a.hasMany('Todo', 'goalId'),
     journeys: a.hasMany('Journey', 'goalId'),
   }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
@@ -149,6 +162,116 @@ const schema = a.schema({
     slots: a.string().required(),
     timezone: a.string(),
   }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
+
+  Habit: a.model({
+    userId: a.id().required(),
+    goalId: a.id().required(),
+    title: a.string().required(),
+    description: a.string(),
+    frequency: a.enum(['DAILY', 'WEEKLY']),
+    duration: a.integer(),
+    cueTime: a.string(),
+    cuePlace: a.string(),
+    cueContext: a.string(),
+    reward: a.string(),
+    status: a.enum(['ACTIVE', 'PAUSED', 'COMPLETED']),
+  }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
+
+  HabitCompletion: a.model({
+    habitId: a.id().required(),
+    userId: a.id().required(),
+    date: a.date().required(),
+    completed: a.boolean(),
+    notes: a.string(),
+  }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
+
+  SessionFeedback: a.model({
+    sessionId: a.id().required(),
+    menteeId: a.id().required(),
+    mentorId: a.id().required(),
+    rating: a.integer().required(),
+    growthArea: a.string(),
+    growthIdea: a.string(),
+    whatWentWell: a.string(),
+    whatToImprove: a.string(),
+    additionalComments: a.string(),
+    isAnonymous: a.boolean(),
+  }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
+
+  MentorSessionNote: a.model({
+    sessionId: a.id().required(),
+    mentorId: a.id().required(),
+    summary: a.string(),
+    followUps: a.string(),
+    growthFocus: a.string(),
+    privateNotes: a.string(),
+  }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
+
+  Notification: a.model({
+    userId: a.id().required(),
+    title: a.string().required(),
+    message: a.string().required(),
+    type: a.string(),
+    read: a.boolean(),
+    relatedId: a.string(),
+  }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
+
+  Venue: a.model({
+    name: a.string().required(),
+    type: a.enum(['LIBRARY', 'CO_WORKING', 'CAFE', 'COMMUNITY_CENTER']),
+    address: a.string(),
+    city: a.string(),
+    capacity: a.integer(),
+    amenities: a.string().array(),
+    image: a.string(),
+    isPartner: a.boolean(),
+    partnershipTier: a.enum(['BRONZE', 'SILVER', 'GOLD']),
+  }).authorization(allow => [allow.publicApiKey()]),
+
+  Event: a.model({
+    title: a.string().required(),
+    description: a.string(),
+    type: a.enum(['HANGOUT', 'WORKSHOP', 'NETWORKING', 'CASUAL_MEETUP']),
+    venueId: a.id(),
+    hostId: a.id(),
+    date: a.date().required(),
+    time: a.string(),
+    duration: a.integer(),
+    maxAttendees: a.integer(),
+    attendees: a.id().array(),
+    isVirtual: a.boolean(),
+    price: a.float(),
+    tags: a.string().array(),
+    image: a.string(),
+  }).authorization(allow => [allow.publicApiKey()]),
+
+  SavedMentor: a.model({
+    userId: a.id().required(),
+    mentorId: a.id().required(),
+  }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
+
+  MentorshipRequest: a.model({
+    menteeId: a.id().required(),
+    mentorId: a.id().required(),
+    message: a.string(),
+    status: a.enum(['PENDING', 'ACCEPTED', 'DECLINED']),
+  }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
+
+  MentorApplication: a.model({
+    userId: a.id(),
+    name: a.string().required(),
+    email: a.string().required(),
+    details: a.json(),
+    status: a.enum(['SUBMITTED', 'APPROVED', 'REJECTED']),
+  }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
+
+  ContactMessage: a.model({
+    userId: a.id(),
+    name: a.string().required(),
+    email: a.string().required(),
+    subject: a.string(),
+    message: a.string().required(),
+  }).authorization(allow => [allow.publicApiKey()]),
 });
 
 export type Schema = ClientSchema<typeof schema>;
@@ -158,7 +281,7 @@ export const data = defineData({
   authorizationModes: {
     defaultAuthorizationMode: 'apiKey',
     apiKeyAuthorizationMode: {
-      expiresInDays: 30,
+      expiresInDays: 365,
     },
   },
 });
