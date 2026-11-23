@@ -3,13 +3,15 @@
 // for local development only and are not a security boundary.
 
 import * as amplifyAuth from 'aws-amplify/auth'
-import { isCloudBackend } from './backend'
+import { isCloudBackend, setSignedInUser } from './backend'
 import { newId } from './localStore'
 
 export interface AuthIdentity {
   userId: string
   email: string
   name?: string
+  /** Member of the ADMIN Cognito group (always true for local demo accounts). */
+  isAdmin: boolean
 }
 
 interface LocalAccount {
@@ -106,13 +108,21 @@ export async function getIdentity(): Promise<AuthIdentity | null> {
   if (isCloudBackend) {
     try {
       const authUser = await amplifyAuth.getCurrentUser()
-      const attributes = await amplifyAuth.fetchUserAttributes()
+      const [attributes, session] = await Promise.all([
+        amplifyAuth.fetchUserAttributes(),
+        amplifyAuth.fetchAuthSession()
+      ])
+      const groups = session.tokens?.accessToken?.payload['cognito:groups']
+      const isAdmin = Array.isArray(groups) && groups.includes('ADMIN')
+      setSignedInUser(authUser.userId, isAdmin)
       return {
         userId: authUser.userId,
         email: attributes.email || authUser.signInDetails?.loginId || authUser.username,
-        name: attributes.name
+        name: attributes.name,
+        isAdmin
       }
     } catch {
+      setSignedInUser(null)
       return null
     }
   }
@@ -120,13 +130,17 @@ export async function getIdentity(): Promise<AuthIdentity | null> {
   try {
     id = localStorage.getItem(SESSION_KEY)
   } catch {
+    setSignedInUser(null)
     return null
   }
   const account = id ? readAccounts().find(a => a.id === id) : undefined
-  return account ? { userId: account.id, email: account.email, name: account.name } : null
+  // Demo mode has no admin group, so every local account can try the admin page.
+  setSignedInUser(account?.id ?? null, true)
+  return account ? { userId: account.id, email: account.email, name: account.name, isAdmin: true } : null
 }
 
 export async function signOut(): Promise<void> {
+  setSignedInUser(null)
   if (isCloudBackend) {
     await amplifyAuth.signOut()
     return

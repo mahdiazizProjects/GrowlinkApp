@@ -23,18 +23,39 @@
   links, mentor applications silently promoting accounts to mentor, forms that reported success without
   saving, and a backend API key that expired after 30 days (now 365).
 
-## Before launch
+- Data access locked down (see README, *Access rules and admins*). Signed-in requests use Cognito and
+  per-user rules; the public API key can only read catalogue data and submit two forms. User emails are
+  visible only to their owner and admins. The rules are compiled locally with `npm run check:backend`.
+- Admin page (/admin) for mentor applications, contact messages, venues and events; `ADMIN` Cognito group.
+- Mentors add a video-call link to virtual sessions (http/https only); the mentee is notified.
+- Session dialogs now show venue details (they were never displayed) and no longer crash when a profile
+  can't be loaded.
+- Existing upcoming sessions and past feedback are backfilled into the new public slot and rating tables
+  the first time a participant signs in after the upgrade.
 
-1. **Lock down data access (security).** Every model uses `allow.publicApiKey()` and the default mode is
-   `apiKey`, so anyone with the site's API key (it is in the page source) can read every user's private
-   reflections, mentor notes and contact messages, and edit records that are not theirs. Move to
-   `allow.owner()` / authenticated rules per model, keep public read only where intended (User profiles,
-   Venue, Event), and pass `authMode: 'userPool'` for signed-in calls. Test against a sandbox.
-2. **Admin review of mentor applications.** Applications are stored in `MentorApplication`; approving one
-   currently means setting the user's `role` by hand. A small admin page or a Cognito group would help.
-3. **Meeting links for virtual sessions.** Nothing generates one yet; the mentor can add a link in the
-   session notes. Integrating Google Meet, Zoom or similar would close this.
-4. **Payments.** Session prices are displayed but not charged, and membership upgrades go to the contact
-   form.
-5. **Email or push reminders.** Notifications are in-app only.
-6. **Seed venues and events** in the cloud tables, or add a simple admin form for them.
+## Deploying this version
+
+1. Deploy the backend (`npx ampx sandbox` for a test environment first, then your Amplify Console build).
+2. Add yourself to the `ADMIN` group in Cognito, then sign out and back in.
+3. Smoke-test with two accounts (one mentor, one mentee) in two browsers:
+   - signed out: home, mentors, a mentor profile, events and venues load; contact form sends
+   - mentee: book a session; the slot disappears for a second mentee; mentor gets the notification
+   - mentor: approve, add a call link, mark complete; mentee leaves feedback; rating shows publicly
+   - admin: approve a mentor application; add a venue and an event; join it as a mentee
+   - try opening another user's goal or session id directly: it must not load
+4. Watch the browser console for "Not Authorized" errors; each one names the table and operation.
+
+## Known limits
+
+1. **Private journey posts** are hidden in the app but any signed-in user could still fetch them from the
+   API. Fixing that needs either a separate table for private posts or a small server-side function.
+2. **Ratings and notifications can be created by any signed-in user.** That is what lets a mentee publish
+   a rating or notify their mentor, but it also allows spam. A server-side function that checks the
+   session exists would close it.
+3. **Action items and progress reports created before this version** have no owner recorded, so after
+   deploying they can be read but not edited by their creator. Deleting and re-creating the habit plan
+   fixes it for that user (an admin can also edit them).
+4. **Payments** are not implemented: prices are shown but not charged; membership upgrades go to the
+   contact form.
+5. **Notifications are in-app only** (no email or push reminders).
+6. **Meeting links are pasted by the mentor**; there is no Meet/Zoom integration.

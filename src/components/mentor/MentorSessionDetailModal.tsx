@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import MeetingLink from '../sessions/MeetingLink'
 import { X, Save, Calendar, User, Star, MessageSquare, FileText, AlertCircle, CheckCircle, XCircle } from 'lucide-react'
 import { Session, SessionFeedback, MentorSessionNotes } from '../../types'
 import { format } from 'date-fns'
@@ -180,6 +181,11 @@ export default function MentorSessionDetailModal({
           </div>
         </div>
 
+        <MeetingLink
+          session={session}
+          onSave={onUpdateSession ? link => onUpdateSession(session.id, { meetingLink: link }) : undefined}
+        />
+
         {/* Cancellation request (within 24h) */}
         {session.cancellationRequestedAt && (
           <div className="flex items-center gap-2 p-4 bg-amber-50 border border-amber-200 rounded-lg">
@@ -211,7 +217,7 @@ export default function MentorSessionDetailModal({
                 <p className="text-sm text-gray-700">
                   {isWithin24h
                     ? 'Within 24 hours: the mentee must accept your reason. If they reject, you may be penalised.'
-                    : 'More than 24 hours before: you may cancel. The mentee will be notified (e.g. by email).'}
+                    : 'More than 24 hours before: you may cancel. The mentee gets an in-app notification.'}
                 </p>
                 <textarea
                   value={cancellationReason}

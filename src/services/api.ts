@@ -4,7 +4,7 @@
 
 import { generateClient } from 'aws-amplify/data'
 import type { Schema } from '../../amplify/data/resource'
-import { isCloudBackend } from './backend'
+import { getSignedInUserId, isCloudBackend } from './backend'
 import { localClient } from './localStore'
 import './localSeed'
 import type {
@@ -39,13 +39,25 @@ export interface CreateUserParams {
 type Rec = Record<string, unknown>
 type DataClient = ReturnType<typeof generateClient<Schema>>
 
-let _client: DataClient | null = null
+let _userClient: DataClient | null = null
+let _publicClient: DataClient | null = null
+
+/**
+ * The data client for the current caller: Cognito-signed when someone is signed in (so owner rules
+ * apply), the public API key otherwise. Local mode has a single in-browser client.
+ */
 function getClient(): DataClient {
-  if (!_client) {
-    _client = isCloudBackend ? generateClient<Schema>() : (localClient as unknown as DataClient)
+  if (!isCloudBackend) return localClient as unknown as DataClient
+  if (getSignedInUserId()) {
+    return (_userClient ||= generateClient<Schema>({ authMode: 'userPool' }))
   }
-  return _client
+  return (_publicClient ||= generateClient<Schema>({ authMode: 'apiKey' }))
 }
+
+/** Profile fields anyone may read. `email` is restricted to the account owner and admins. */
+const PUBLIC_USER_FIELDS = [
+  'id', 'username', 'name', 'title', 'role', 'bio', 'avatar', 'location', 'skills', 'interests', 'createdAt', 'updatedAt'
+] as const
 
 interface ListResult { data?: unknown[] | null; nextToken?: string | null; errors?: { message?: string }[] }
 interface LooseModel { list: (options?: Rec) => Promise<ListResult> }
@@ -54,7 +66,7 @@ interface LooseModel { list: (options?: Rec) => Promise<ListResult> }
  * Lists every record of a model, following pagination. DynamoDB applies filters after reading a
  * page, so a single `list({ filter })` call can silently miss matches once a table grows.
  */
-async function listAll(modelName: string, filter?: Rec): Promise<Rec[]> {
+async function listAll(modelName: string, filter?: Rec, selectionSet?: readonly string[]): Promise<Rec[]> {
   const model = (getClient().models as unknown as Record<string, LooseModel | undefined>)[modelName]
   if (!model) {
     throw new Error(`The "${modelName}" model is not available. Redeploy the Amplify backend so it matches amplify/data/resource.ts.`)
@@ -63,7 +75,12 @@ async function listAll(modelName: string, filter?: Rec): Promise<Rec[]> {
   let nextToken: string | null | undefined
   let pages = 0
   do {
-    const res = await model.list({ ...(filter && { filter }), ...(nextToken && { nextToken }), limit: 1000 })
+    const res = await model.list({
+      ...(filter && { filter }),
+      ...(nextToken && { nextToken }),
+      ...(selectionSet && isCloudBackend && { selectionSet }),
+      limit: 1000
+    })
     if (res.errors?.length) throw new Error(res.errors.map(e => e.message || String(e)).join(', '))
     out.push(...((res.data || []).filter(Boolean) as Rec[]))
     nextToken = res.nextToken
@@ -208,8 +225,14 @@ function toAppJourney(
 }
 
 export async function getUser(userId: string): Promise<User | null> {
-  const { data } = await getClient().models.User.get({ id: userId })
-  return toAppUser(data as Record<string, unknown> | null)
+  // Only the owner (or an admin) may read `email`; asking for it on someone else's profile is an error.
+  const own = userId === getSignedInUserId()
+  const { data } = own || !isCloudBackend
+    ? await getClient().models.User.get({ id: userId })
+    : await getClient().models.User.get({ id: userId }, { selectionSet: PUBLIC_USER_FIELDS })
+  const user = toAppUser(data as Record<string, unknown> | null)
+  // Local mode stores everything together; keep other people's email out of the UI there too.
+  return user && !own ? { ...user, email: '' } : user
 }
 
 export async function createUser(params: CreateUserParams | Partial<User>): Promise<User> {
@@ -254,8 +277,12 @@ export async function updateUser(userId: string, updates: Partial<User>): Promis
 }
 
 export async function listUsers(): Promise<User[]> {
-  const data = await listAll('User')
-  return data.map(d => toAppUser(d)).filter((u): u is User => u != null)
+  const me = getSignedInUserId()
+  const data = await listAll('User', undefined, PUBLIC_USER_FIELDS)
+  return data
+    .map(d => toAppUser(d))
+    .filter((u): u is User => u != null)
+    .map(u => (u.id === me ? u : { ...u, email: '' }))
 }
 
 /** Loads several users at once, skipping ids that no longer exist. */
@@ -298,8 +325,83 @@ export async function createSession(session: Session): Promise<Session> {
     venueId: session.venueId
   })
   if (errors?.length || !data) fail(errors, 'Failed to create session')
+  const created = data as Rec
+  // Public marker so other mentees can't book the same time; holds no private details.
+  try {
+    await getClient().models.BookedSlot.create({
+      sessionId: created.id as string,
+      mentorId: session.mentorId,
+      menteeId: session.menteeId,
+      startsAt: dateStr,
+      duration: session.duration ?? 60
+    })
+  } catch (error) {
+    console.error('Could not reserve the booked slot:', error)
+  }
   const users = await loadUsers([session.mentorId, session.menteeId])
-  return toAppSession(data as Rec, users.get(session.mentorId), users.get(session.menteeId))!
+  return toAppSession(created, users.get(session.mentorId), users.get(session.menteeId))!
+}
+
+/**
+ * Backfills public slot markers for upcoming sessions booked before markers existed, so they block
+ * other bookings. Safe to call repeatedly; failures are ignored.
+ */
+export async function ensureBookedSlots(sessions: Session[]): Promise<void> {
+  const upcoming = sessions.filter(s =>
+    (s.status === 'PENDING' || s.status === 'CONFIRMED') && !s.cancelledAt && new Date(s.date).getTime() > Date.now()
+  )
+  if (upcoming.length === 0) return
+  const mentorIds = [...new Set(upcoming.map(s => s.mentorId))]
+  const existing = new Set(
+    (await Promise.all(mentorIds.map(id => listAll('BookedSlot', { mentorId: { eq: id } }).catch(() => [] as Rec[]))))
+      .flat()
+      .map(r => r.sessionId as string)
+  )
+  await Promise.all(upcoming.filter(s => !existing.has(s.id)).map(s =>
+    getClient().models.BookedSlot.create({
+      sessionId: s.id,
+      mentorId: s.mentorId,
+      menteeId: s.menteeId,
+      startsAt: new Date(s.date).toISOString(),
+      duration: s.duration ?? 60
+    }).catch(() => null)
+  ))
+}
+
+/** Publishes anonymous ratings for feedback given before public ratings existed. */
+export async function ensureMentorRatings(feedback: SessionFeedback[]): Promise<void> {
+  await Promise.all(feedback.map(async f => {
+    try {
+      const { data } = await getClient().models.MentorRating.get({ id: f.sessionId })
+      if (!data) await getClient().models.MentorRating.create({ id: f.sessionId, mentorId: f.mentorId, rating: f.rating })
+    } catch {
+      // Best effort only.
+    }
+  }))
+}
+
+/** Releases a session's public slot marker once it can no longer take place. */
+async function releaseBookedSlot(sessionId: string): Promise<void> {
+  const slots = await listAll('BookedSlot', { sessionId: { eq: sessionId } }).catch(() => [])
+  await Promise.all(slots.map(s => getClient().models.BookedSlot.delete({ id: s.id as string }).catch(() => null)))
+}
+
+/**
+ * A mentor's taken times as session-shaped records, for slot calculations. Works for any caller,
+ * including people who are not part of those sessions.
+ */
+export async function listBookedSlotsForMentor(mentorId: string): Promise<Pick<Session, 'id' | 'date' | 'time' | 'duration' | 'status'>[]> {
+  const rows = await listAll('BookedSlot', { mentorId: { eq: mentorId } })
+  return rows.map(r => {
+    const start = new Date(r.startsAt as string)
+    return {
+      id: r.sessionId as string,
+      date: `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}T00:00:00`,
+      time: `${String(start.getHours()).padStart(2, '0')}:${String(start.getMinutes()).padStart(2, '0')}`,
+      duration: (r.duration as number) ?? 60,
+      status: 'CONFIRMED' as const
+    }
+  })
 }
 
 export async function updateSession(sessionId: string, updates: Partial<Session>): Promise<Session | null> {
@@ -324,6 +426,7 @@ export async function updateSession(sessionId: string, updates: Partial<Session>
   } as Parameters<DataClient['models']['Session']['update']>[0])
   if (errors?.length || !data) fail(errors, 'Failed to update session')
   const d = data as Rec
+  if (d.status === 'CANCELLED') await releaseBookedSlot(sessionId)
   const users = await loadUsers([d.mentorId as string, d.menteeId as string])
   return toAppSession(d, users.get(d.mentorId as string), users.get(d.menteeId as string))
 }
@@ -767,17 +870,30 @@ function toAppEvent(r: Rec, host?: User): Event {
   }
 }
 
+/** Attendee ids per event, from the EventAttendance table plus the legacy `attendees` array. */
+async function loadAttendance(): Promise<Record<string, string[]>> {
+  const rows = await listAll('EventAttendance').catch(() => [] as Rec[])
+  const byEvent: Record<string, string[]> = {}
+  for (const r of rows) (byEvent[r.eventId as string] ||= []).push(r.userId as string)
+  return byEvent
+}
+
+function withAttendees(r: Rec, attendance: Record<string, string[]>): Rec {
+  const legacy = ((r.attendees as (string | null)[] | null) ?? []).filter((a): a is string => !!a)
+  return { ...r, attendees: [...new Set([...legacy, ...(attendance[r.id as string] || [])])] }
+}
+
 export async function listEvents(): Promise<Event[]> {
-  const rows = await listAll('Event')
+  const [rows, attendance] = await Promise.all([listAll('Event'), loadAttendance()])
   const hosts = await loadUsers(rows.map(r => r.hostId as string))
   return rows
-    .map(r => toAppEvent(r, hosts.get(r.hostId as string)))
+    .map(r => toAppEvent(withAttendees(r, attendance), hosts.get(r.hostId as string)))
     .sort((a, b) => `${a.date}T${a.time}`.localeCompare(`${b.date}T${b.time}`))
 }
 
 type EventType = 'HANGOUT' | 'WORKSHOP' | 'NETWORKING' | 'CASUAL_MEETUP'
 
-export async function createEvent(event: Omit<Event, 'id' | 'attendees' | 'host'> & { attendees?: string[] }): Promise<Event> {
+export async function createEvent(event: Omit<Event, 'id' | 'attendees' | 'host'>): Promise<Event> {
   const { data, errors } = await getClient().models.Event.create({
     title: event.title,
     description: event.description,
@@ -788,7 +904,6 @@ export async function createEvent(event: Omit<Event, 'id' | 'attendees' | 'host'
     time: event.time,
     duration: event.duration,
     maxAttendees: event.maxAttendees,
-    attendees: event.attendees ?? [],
     isVirtual: event.isVirtual,
     price: event.price,
     tags: event.tags,
@@ -796,25 +911,58 @@ export async function createEvent(event: Omit<Event, 'id' | 'attendees' | 'host'
   })
   if (errors?.length || !data) fail(errors, 'Failed to create event')
   const host = event.hostId ? await getUser(event.hostId).catch(() => null) : null
-  return toAppEvent(data as Rec, host ?? undefined)
+  return toAppEvent({ ...(data as Rec), attendees: [] }, host ?? undefined)
 }
 
-/** Adds or removes the user from an event's attendee list. Throws when the event is full. */
+export async function deleteEvent(eventId: string): Promise<void> {
+  const rows = await listAll('EventAttendance', { eventId: { eq: eventId } }).catch(() => [] as Rec[])
+  await Promise.all(rows.map(r => getClient().models.EventAttendance.delete({ id: r.id as string }).catch(() => null)))
+  const { errors } = await getClient().models.Event.delete({ id: eventId })
+  if (errors?.length) fail(errors, 'Failed to delete event')
+}
+
+/** Adds or removes the user as an attendee. Throws when the event is full. */
 export async function setEventAttendance(eventId: string, userId: string, attending: boolean): Promise<Event> {
   const { data: current } = await getClient().models.Event.get({ id: eventId })
   if (!current) throw new Error('This event no longer exists')
   const c = current as Rec
-  const existing = ((c.attendees as (string | null)[] | null) ?? []).filter((a): a is string => !!a)
-  const without = existing.filter(a => a !== userId)
-  const max = (c.maxAttendees as number | null) ?? 0
-  if (attending && !existing.includes(userId) && max > 0 && existing.length >= max) {
-    throw new Error('This event is full')
+  const mine = await listAll('EventAttendance', { eventId: { eq: eventId }, userId: { eq: userId } })
+  if (attending && mine.length === 0) {
+    const all = await listAll('EventAttendance', { eventId: { eq: eventId } })
+    const max = (c.maxAttendees as number | null) ?? 0
+    const legacy = ((c.attendees as (string | null)[] | null) ?? []).filter(Boolean).length
+    if (max > 0 && all.length + legacy >= max) throw new Error('This event is full')
+    const { errors } = await getClient().models.EventAttendance.create({ eventId, userId })
+    if (errors?.length) fail(errors, 'Failed to join the event')
+  } else if (!attending) {
+    await Promise.all(mine.map(r => getClient().models.EventAttendance.delete({ id: r.id as string })))
   }
-  const attendees = attending ? [...without, userId] : without
-  const { data, errors } = await getClient().models.Event.update({ id: eventId, attendees })
-  if (errors?.length || !data) fail(errors, 'Failed to update attendance')
+  const attendance = await loadAttendance()
   const host = c.hostId ? await getUser(c.hostId as string).catch(() => null) : null
-  return toAppEvent(data as Rec, host ?? undefined)
+  return toAppEvent(withAttendees(c, attendance), host ?? undefined)
+}
+
+type VenueType = 'LIBRARY' | 'CO_WORKING' | 'CAFE' | 'COMMUNITY_CENTER'
+
+export async function createVenue(venue: Omit<Venue, 'id'>): Promise<Venue> {
+  const { data, errors } = await getClient().models.Venue.create({
+    name: venue.name,
+    type: upper(venue.type) as VenueType,
+    address: venue.address,
+    city: venue.city,
+    capacity: venue.capacity,
+    amenities: venue.amenities,
+    image: venue.image,
+    isPartner: venue.isPartner,
+    partnershipTier: upper(venue.partnershipTier) as 'BRONZE' | 'SILVER' | 'GOLD'
+  })
+  if (errors?.length || !data) fail(errors, 'Failed to create venue')
+  return toAppVenue(data as Rec)
+}
+
+export async function deleteVenue(venueId: string): Promise<void> {
+  const { errors } = await getClient().models.Venue.delete({ id: venueId })
+  if (errors?.length) fail(errors, 'Failed to delete venue')
 }
 
 // ---------------------------------------------------------------------------
@@ -853,6 +1001,13 @@ export async function createSessionFeedback(feedback: Omit<SessionFeedback, 'id'
     isAnonymous: feedback.isAnonymous ?? false
   })
   if (errors?.length || !data) fail(errors, 'Failed to submit feedback')
+  // Public, anonymous copy of the score. Keyed by session id so a session can only count once.
+  const { errors: ratingErrors } = await getClient().models.MentorRating.create({
+    id: feedback.sessionId,
+    mentorId: feedback.mentorId,
+    rating: feedback.rating
+  })
+  if (ratingErrors?.length) console.error('Could not publish the rating:', ratingErrors)
   return toAppFeedback(data as Rec)
 }
 
@@ -872,9 +1027,17 @@ export async function listSessionFeedbackForMentor(mentorId: string): Promise<Se
   return (await listAll('SessionFeedback', { mentorId: { eq: mentorId } })).map(toAppFeedback)
 }
 
+/** Public rating summary for one mentor (no feedback text). */
+export async function getMentorRating(mentorId: string): Promise<{ rating: number; count: number } | null> {
+  const rows = await listAll('MentorRating', { mentorId: { eq: mentorId } })
+  if (rows.length === 0) return null
+  const sum = rows.reduce((t, r) => t + ((r.rating as number) || 0), 0)
+  return { rating: Math.round((sum / rows.length) * 10) / 10, count: rows.length }
+}
+
 /** Average rating and feedback count per mentor, for listings. */
 export async function getMentorRatings(): Promise<Record<string, { rating: number; count: number }>> {
-  const rows = await listAll('SessionFeedback')
+  const rows = await listAll('MentorRating')
   const totals: Record<string, { sum: number; count: number }> = {}
   for (const r of rows) {
     const t = (totals[r.mentorId as string] ||= { sum: 0, count: 0 })
@@ -1032,6 +1195,73 @@ export async function createMentorApplication(params: { userId?: string; name: s
     status: 'SUBMITTED'
   })
   if (errors?.length) fail(errors, 'Failed to submit application')
+}
+
+export interface MentorApplicationRecord {
+  id: string
+  userId?: string
+  name: string
+  email: string
+  details: Record<string, unknown>
+  status: 'SUBMITTED' | 'APPROVED' | 'REJECTED'
+  createdAt: string
+}
+
+export async function listMentorApplications(): Promise<MentorApplicationRecord[]> {
+  const rows = await listAll('MentorApplication')
+  return rows
+    .map(r => {
+      let details: Record<string, unknown> = {}
+      try {
+        details = typeof r.details === 'string' ? JSON.parse(r.details) : ((r.details as Record<string, unknown>) || {})
+      } catch {
+        details = {}
+      }
+      return {
+        id: r.id as string,
+        userId: (r.userId as string | null) ?? undefined,
+        name: (r.name as string) || '',
+        email: (r.email as string) || '',
+        details,
+        status: ((r.status as string) || 'SUBMITTED') as MentorApplicationRecord['status'],
+        createdAt: (r.createdAt as string) || nowIso()
+      }
+    })
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+}
+
+export async function setMentorApplicationStatus(applicationId: string, status: 'APPROVED' | 'REJECTED'): Promise<void> {
+  const { errors } = await getClient().models.MentorApplication.update({ id: applicationId, status })
+  if (errors?.length) fail(errors, 'Failed to update the application')
+}
+
+export interface ContactMessageRecord {
+  id: string
+  userId?: string
+  name: string
+  email: string
+  subject?: string
+  message: string
+  createdAt: string
+}
+
+export async function listContactMessages(): Promise<ContactMessageRecord[]> {
+  return (await listAll('ContactMessage'))
+    .map(r => ({
+      id: r.id as string,
+      userId: (r.userId as string | null) ?? undefined,
+      name: (r.name as string) || '',
+      email: (r.email as string) || '',
+      subject: (r.subject as string | null) ?? undefined,
+      message: (r.message as string) || '',
+      createdAt: (r.createdAt as string) || nowIso()
+    }))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+}
+
+export async function deleteContactMessage(messageId: string): Promise<void> {
+  const { errors } = await getClient().models.ContactMessage.delete({ id: messageId })
+  if (errors?.length) fail(errors, 'Failed to delete the message')
 }
 
 export async function createContactMessage(params: { userId?: string; name: string; email: string; subject?: string; message: string }): Promise<void> {

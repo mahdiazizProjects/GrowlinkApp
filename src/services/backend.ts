@@ -26,3 +26,19 @@ export function configureBackend(): void {
   Amplify.configure(outputs as any)
   configured = true
 }
+
+// ---------------------------------------------------------------------------
+// Who is calling. Signed-in requests use the Cognito user pool so per-user access rules apply;
+// signed-out requests use the public API key, which can only read public catalogue data.
+// ---------------------------------------------------------------------------
+
+let signedInUserId: string | null = null
+let adminFlag = false
+
+export function setSignedInUser(userId: string | null, isAdmin = false): void {
+  signedInUserId = userId
+  adminFlag = !!userId && isAdmin
+}
+
+export const getSignedInUserId = (): string | null => signedInUserId
+export const isSignedInAdmin = (): boolean => adminFlag

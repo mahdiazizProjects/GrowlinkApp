@@ -1,9 +1,23 @@
 import { type ClientSchema, a, defineData } from '@aws-amplify/backend';
 
+/*
+ * Access rules
+ * ------------
+ * Signed-in calls use the Cognito user pool; signed-out visitors use the public API key, which only
+ * reads public catalogue data (mentor profiles, availability, venues, events, ratings, booked slots)
+ * and can submit the contact and mentor-application forms.
+ *
+ * Every user id in this app is the Cognito `sub`, so owner rules compare a record's id field against
+ * the caller's `sub` claim. Members of the `ADMIN` Cognito group can manage everything.
+ */
 const schema = a.schema({
   User: a.model({
     username: a.string().required(),
-    email: a.string().required(),
+    // Visible only to the account owner and admins; profile lists use a selection set without it.
+    email: a.string().authorization(allow => [
+      allow.ownerDefinedIn('id').identityClaim('sub'),
+      allow.groups(['ADMIN']),
+    ]),
     name: a.string().required(),
     title: a.string(),
     role: a.enum(['MENTOR', 'MENTEE', 'BOTH']),
@@ -21,14 +35,24 @@ const schema = a.schema({
     assignedPlans: a.hasMany('ActionPlan', 'assigneeId'),
     reviewsWritten: a.hasMany('Review', 'authorId'),
     reviewsReceived: a.hasMany('Review', 'targetId'),
-  }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
+  }).authorization(allow => [
+    allow.publicApiKey().to(['read']),
+    allow.authenticated().to(['read']),
+    allow.ownerDefinedIn('id').identityClaim('sub'),
+    allow.groups(['ADMIN']),
+  ]),
 
   Category: a.model({
     name: a.string().required(),
     description: a.string(),
     userId: a.id(),
     user: a.belongsTo('User', 'userId'),
-  }).authorization(allow => [allow.publicApiKey()]),
+  }).authorization(allow => [
+    allow.publicApiKey().to(['read']),
+    allow.authenticated().to(['read']),
+    allow.ownerDefinedIn('userId').identityClaim('sub'),
+    allow.groups(['ADMIN']),
+  ]),
 
   Session: a.model({
     mentorId: a.id().required(),
@@ -48,7 +72,11 @@ const schema = a.schema({
     menteeAcceptedCancellation: a.boolean(),
     feedbackSubmitted: a.boolean(),
     feedbackSubmittedAt: a.datetime(),
-  }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
+  }).authorization(allow => [
+    allow.ownerDefinedIn('menteeId').identityClaim('sub'),
+    allow.ownerDefinedIn('mentorId').identityClaim('sub'),
+    allow.groups(['ADMIN']),
+  ]),
 
   Reflection: a.model({
     userId: a.id().required(),
@@ -59,7 +87,11 @@ const schema = a.schema({
     text: a.string().required(),
     sharedWithMentorId: a.id(),
     mentorFeedback: a.string(),
-  }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
+  }).authorization(allow => [
+    allow.ownerDefinedIn('userId').identityClaim('sub'),
+    allow.ownerDefinedIn('sharedWithMentorId').identityClaim('sub').to(['read']),
+    allow.groups(['ADMIN']),
+  ]),
 
   Goal: a.model({
     userId: a.id().required(),
@@ -74,7 +106,11 @@ const schema = a.schema({
     mentorId: a.id(),
     todos: a.hasMany('Todo', 'goalId'),
     journeys: a.hasMany('Journey', 'goalId'),
-  }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
+  }).authorization(allow => [
+    allow.ownerDefinedIn('userId').identityClaim('sub'),
+    allow.ownerDefinedIn('mentorId').identityClaim('sub').to(['read', 'update']),
+    allow.groups(['ADMIN']),
+  ]),
 
   Todo: a.model({
     userId: a.id().required(),
@@ -84,7 +120,10 @@ const schema = a.schema({
     text: a.string().required(),
     done: a.boolean(),
     dueDate: a.date(),
-  }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
+  }).authorization(allow => [
+    allow.ownerDefinedIn('userId').identityClaim('sub'),
+    allow.groups(['ADMIN']),
+  ]),
 
   Review: a.model({
     authorId: a.id().required(),
@@ -94,7 +133,12 @@ const schema = a.schema({
     rating: a.integer().required(),
     comment: a.string(),
     type: a.enum(['SESSION_FEEDBACK', 'GENERAL']),
-  }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
+  }).authorization(allow => [
+    allow.publicApiKey().to(['read']),
+    allow.authenticated().to(['read']),
+    allow.ownerDefinedIn('authorId').identityClaim('sub'),
+    allow.groups(['ADMIN']),
+  ]),
 
   ActionPlan: a.model({
     creatorId: a.id().required(),
@@ -107,7 +151,11 @@ const schema = a.schema({
     endDate: a.date(),
     status: a.enum(['ACTIVE', 'COMPLETED', 'ARCHIVED']),
     items: a.hasMany('ActionItem', 'planId'),
-  }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
+  }).authorization(allow => [
+    allow.ownerDefinedIn('creatorId').identityClaim('sub'),
+    allow.ownerDefinedIn('assigneeId').identityClaim('sub'),
+    allow.groups(['ADMIN']),
+  ]),
 
   ActionItem: a.model({
     planId: a.id().required(),
@@ -118,7 +166,11 @@ const schema = a.schema({
     frequency: a.enum(['DAILY', 'WEEKLY', 'ONE_TIME']),
     status: a.enum(['ACTIVE', 'PAUSED', 'COMPLETED']),
     progress: a.hasMany('ProgressReport', 'actionItemId'),
-  }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
+  }).authorization(allow => [
+    allow.authenticated().to(['read']),
+    allow.owner(),
+    allow.groups(['ADMIN']),
+  ]),
 
   ProgressReport: a.model({
     actionItemId: a.id().required(),
@@ -127,7 +179,11 @@ const schema = a.schema({
     status: a.enum(['COMPLETED', 'MISSED', 'SKIPPED']),
     notes: a.string(),
     evidence: a.string(),
-  }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
+  }).authorization(allow => [
+    allow.authenticated().to(['read']),
+    allow.owner(),
+    allow.groups(['ADMIN']),
+  ]),
 
   Journey: a.model({
     userId: a.id().required(),
@@ -141,27 +197,44 @@ const schema = a.schema({
     tags: a.string().array(),
     reactions: a.hasMany('JourneyReaction', 'journeyId'),
     comments: a.hasMany('JourneyComment', 'journeyId'),
-  }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
+  }).authorization(allow => [
+    allow.authenticated().to(['read']),
+    allow.ownerDefinedIn('userId').identityClaim('sub'),
+    allow.groups(['ADMIN']),
+  ]),
 
   JourneyReaction: a.model({
     journeyId: a.id().required(),
     journey: a.belongsTo('Journey', 'journeyId'),
     userId: a.id().required(),
     type: a.enum(['HEART', 'CELEBRATE', 'SUPPORT']),
-  }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
+  }).authorization(allow => [
+    allow.authenticated().to(['read']),
+    allow.ownerDefinedIn('userId').identityClaim('sub'),
+    allow.groups(['ADMIN']),
+  ]),
 
   JourneyComment: a.model({
     journeyId: a.id().required(),
     journey: a.belongsTo('Journey', 'journeyId'),
     userId: a.id().required(),
     text: a.string().required(),
-  }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
+  }).authorization(allow => [
+    allow.authenticated().to(['read']),
+    allow.ownerDefinedIn('userId').identityClaim('sub'),
+    allow.groups(['ADMIN']),
+  ]),
 
   MentorAvailability: a.model({
     mentorId: a.id().required(),
     slots: a.string().required(),
     timezone: a.string(),
-  }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
+  }).authorization(allow => [
+    allow.publicApiKey().to(['read']),
+    allow.authenticated().to(['read']),
+    allow.ownerDefinedIn('mentorId').identityClaim('sub'),
+    allow.groups(['ADMIN']),
+  ]),
 
   Habit: a.model({
     userId: a.id().required(),
@@ -175,7 +248,10 @@ const schema = a.schema({
     cueContext: a.string(),
     reward: a.string(),
     status: a.enum(['ACTIVE', 'PAUSED', 'COMPLETED']),
-  }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
+  }).authorization(allow => [
+    allow.ownerDefinedIn('userId').identityClaim('sub'),
+    allow.groups(['ADMIN']),
+  ]),
 
   HabitCompletion: a.model({
     habitId: a.id().required(),
@@ -183,7 +259,10 @@ const schema = a.schema({
     date: a.date().required(),
     completed: a.boolean(),
     notes: a.string(),
-  }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
+  }).authorization(allow => [
+    allow.ownerDefinedIn('userId').identityClaim('sub'),
+    allow.groups(['ADMIN']),
+  ]),
 
   SessionFeedback: a.model({
     sessionId: a.id().required(),
@@ -196,7 +275,11 @@ const schema = a.schema({
     whatToImprove: a.string(),
     additionalComments: a.string(),
     isAnonymous: a.boolean(),
-  }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
+  }).authorization(allow => [
+    allow.ownerDefinedIn('menteeId').identityClaim('sub'),
+    allow.ownerDefinedIn('mentorId').identityClaim('sub').to(['read']),
+    allow.groups(['ADMIN']),
+  ]),
 
   MentorSessionNote: a.model({
     sessionId: a.id().required(),
@@ -205,7 +288,10 @@ const schema = a.schema({
     followUps: a.string(),
     growthFocus: a.string(),
     privateNotes: a.string(),
-  }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
+  }).authorization(allow => [
+    allow.ownerDefinedIn('mentorId').identityClaim('sub'),
+    allow.groups(['ADMIN']),
+  ]),
 
   Notification: a.model({
     userId: a.id().required(),
@@ -214,7 +300,12 @@ const schema = a.schema({
     type: a.string(),
     read: a.boolean(),
     relatedId: a.string(),
-  }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
+  }).authorization(allow => [
+    allow.ownerDefinedIn('userId').identityClaim('sub'),
+    // Lets one participant notify the other (booking requests, approvals, feedback).
+    allow.authenticated().to(['create']),
+    allow.groups(['ADMIN']),
+  ]),
 
   Venue: a.model({
     name: a.string().required(),
@@ -226,7 +317,11 @@ const schema = a.schema({
     image: a.string(),
     isPartner: a.boolean(),
     partnershipTier: a.enum(['BRONZE', 'SILVER', 'GOLD']),
-  }).authorization(allow => [allow.publicApiKey()]),
+  }).authorization(allow => [
+    allow.publicApiKey().to(['read']),
+    allow.authenticated().to(['read']),
+    allow.groups(['ADMIN']),
+  ]),
 
   Event: a.model({
     title: a.string().required(),
@@ -238,24 +333,36 @@ const schema = a.schema({
     time: a.string(),
     duration: a.integer(),
     maxAttendees: a.integer(),
+    // Legacy: attendance now lives in EventAttendance so attendees never need write access to events.
     attendees: a.id().array(),
     isVirtual: a.boolean(),
     price: a.float(),
     tags: a.string().array(),
     image: a.string(),
-  }).authorization(allow => [allow.publicApiKey()]),
+  }).authorization(allow => [
+    allow.publicApiKey().to(['read']),
+    allow.authenticated().to(['read']),
+    allow.groups(['ADMIN']),
+  ]),
 
   SavedMentor: a.model({
     userId: a.id().required(),
     mentorId: a.id().required(),
-  }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
+  }).authorization(allow => [
+    allow.ownerDefinedIn('userId').identityClaim('sub'),
+    allow.groups(['ADMIN']),
+  ]),
 
   MentorshipRequest: a.model({
     menteeId: a.id().required(),
     mentorId: a.id().required(),
     message: a.string(),
     status: a.enum(['PENDING', 'ACCEPTED', 'DECLINED']),
-  }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
+  }).authorization(allow => [
+    allow.ownerDefinedIn('menteeId').identityClaim('sub'),
+    allow.ownerDefinedIn('mentorId').identityClaim('sub').to(['read', 'update']),
+    allow.groups(['ADMIN']),
+  ]),
 
   MentorApplication: a.model({
     userId: a.id(),
@@ -263,7 +370,12 @@ const schema = a.schema({
     email: a.string().required(),
     details: a.json(),
     status: a.enum(['SUBMITTED', 'APPROVED', 'REJECTED']),
-  }).authorization(allow => [allow.publicApiKey(), allow.owner()]),
+  }).authorization(allow => [
+    allow.publicApiKey().to(['create']),
+    allow.authenticated().to(['create']),
+    allow.ownerDefinedIn('userId').identityClaim('sub').to(['read']),
+    allow.groups(['ADMIN']),
+  ]),
 
   ContactMessage: a.model({
     userId: a.id(),
@@ -271,7 +383,49 @@ const schema = a.schema({
     email: a.string().required(),
     subject: a.string(),
     message: a.string().required(),
-  }).authorization(allow => [allow.publicApiKey()]),
+  }).authorization(allow => [
+    allow.publicApiKey().to(['create']),
+    allow.authenticated().to(['create']),
+    allow.groups(['ADMIN']),
+  ]),
+  // Public, minimal copies of private data, so the app can show availability, ratings and
+  // attendance without exposing the records they come from.
+
+  /** One row per pending/confirmed session: lets anyone see a mentor's taken times, nothing else. */
+  BookedSlot: a.model({
+    sessionId: a.id().required(),
+    mentorId: a.id().required(),
+    menteeId: a.id().required(),
+    startsAt: a.datetime().required(),
+    duration: a.integer().required(),
+  }).authorization(allow => [
+    allow.publicApiKey().to(['read']),
+    allow.authenticated().to(['read']),
+    allow.ownerDefinedIn('menteeId').identityClaim('sub'),
+    // Either participant may create (backfill) or remove the marker for their session.
+    allow.ownerDefinedIn('mentorId').identityClaim('sub').to(['read', 'create', 'delete']),
+    allow.groups(['ADMIN']),
+  ]),
+
+  /** Rating only (no text, no reviewer), keyed by session id so each session counts once. */
+  MentorRating: a.model({
+    mentorId: a.id().required(),
+    rating: a.integer().required(),
+  }).authorization(allow => [
+    allow.publicApiKey().to(['read']),
+    allow.authenticated().to(['read', 'create']),
+    allow.groups(['ADMIN']),
+  ]),
+
+  EventAttendance: a.model({
+    eventId: a.id().required(),
+    userId: a.id().required(),
+  }).authorization(allow => [
+    allow.publicApiKey().to(['read']),
+    allow.authenticated().to(['read']),
+    allow.ownerDefinedIn('userId').identityClaim('sub'),
+    allow.groups(['ADMIN']),
+  ]),
 });
 
 export type Schema = ClientSchema<typeof schema>;
@@ -279,7 +433,7 @@ export type Schema = ClientSchema<typeof schema>;
 export const data = defineData({
   schema,
   authorizationModes: {
-    defaultAuthorizationMode: 'apiKey',
+    defaultAuthorizationMode: 'userPool',
     apiKeyAuthorizationMode: {
       expiresInDays: 365,
     },

@@ -102,6 +102,7 @@ goes through Cognito (with email verification and password reset) and data is st
 | `npm test` | Unit tests (slot availability, streaks and badges, local data store) |
 | `npm run lint` | ESLint, zero warnings allowed |
 | `npm run typecheck` | TypeScript only |
+| `npm run check:backend` | Compiles the Amplify backend locally (no AWS account or deploy needed) |
 
 ## How the main flows work
 
@@ -116,8 +117,23 @@ goes through Cognito (with email verification and password reset) and data is st
   habit is stored with its cue and reward; check-ins drive streaks, points and badges.
 - **Mentorship requests:** mentees can request a mentor from their home page; mentors accept or decline
   from their dashboard.
-- **Become a mentor:** submits an application for review. It does not change the account's role; an
-  admin sets `role` to `MENTOR` on approval.
+- **Become a mentor:** submits an application. An admin approves or rejects it on the **/admin** page;
+  approval turns the account into a mentor (or "both" for existing mentees) and notifies them.
+- **Virtual sessions:** the mentor pastes a Meet/Zoom/Teams link in the session dialog; the mentee is
+  notified and gets a *Join call* button.
+- **Admin (/admin):** mentor applications, contact messages, and adding or removing venues and events.
+
+## Access rules and admins
+
+Signed-in requests are checked against per-user rules in `amplify/data/resource.ts`: your goals, habits,
+reflections and notes are yours alone; a session is visible to its mentor and mentee; feedback can be read
+by the mentor but not edited. Signed-out visitors can only read the public catalogue (mentor profiles
+without emails, availability, venues, events, ratings, taken time slots) and send the contact and mentor
+forms. Taken slots, ratings and event attendance live in small public tables (`BookedSlot`,
+`MentorRating`, `EventAttendance`) so those features work without exposing private records.
+
+To make someone an admin: AWS Console → Cognito → your user pool → Groups → `ADMIN` → add user. They
+need to sign out and back in. In local demo mode every account can open /admin.
 
 ## Project Structure
 
@@ -139,8 +155,7 @@ src/
 
 ## Before launch
 
-See [NEXT_STEPS.md](./NEXT_STEPS.md). The most important item is tightening data access rules: right now
-every table is readable and writable with the public API key.
+See [NEXT_STEPS.md](./NEXT_STEPS.md) for the post-deploy checklist and known limits.
 
 ## License
 

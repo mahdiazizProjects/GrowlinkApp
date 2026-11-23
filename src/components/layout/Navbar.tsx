@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { User, MessageCircle, Calendar, MapPin, Home, LogIn, Target, CheckCircle, Sparkles, Settings, Menu, X, LayoutDashboard } from 'lucide-react'
+import { User, MessageCircle, Calendar, MapPin, Home, LogIn, Target, CheckCircle, Sparkles, Settings, Menu, X, LayoutDashboard, ShieldCheck } from 'lucide-react'
 import { useApp } from '../../context/AppContext'
 import NotificationSystem from '../notifications/NotificationSystem'
 import { useEffect, useState, type ReactNode } from 'react'
@@ -8,7 +8,7 @@ import UserProfile from '../profile/UserProfile'
 export default function Navbar() {
   const location = useLocation()
   const navigate = useNavigate()
-  const { currentUser, logout, notifications, getUnreadNotificationCount, markNotificationAsRead } = useApp()
+  const { currentUser, isAdmin, logout, notifications, getUnreadNotificationCount, markNotificationAsRead } = useApp()
   const [showProfile, setShowProfile] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
 
@@ -43,7 +43,8 @@ export default function Navbar() {
           : []),
         { to: '/journeys', label: 'Journeys', icon: <Sparkles size={18} /> },
         { to: '/events', label: 'Events', icon: <Calendar size={18} /> },
-        { to: '/setup', label: 'Setup', icon: <Settings size={18} /> }
+        { to: '/setup', label: 'Setup', icon: <Settings size={18} /> },
+        ...(isAdmin ? [{ to: '/admin', label: 'Admin', icon: <ShieldCheck size={18} /> }] : [])
       ]
   // Mentees have more links, so their full bar only appears on wider screens.
   const menuBreakpoint = isMentee ? 'lg:hidden' : 'md:hidden'
@@ -126,6 +127,18 @@ export default function Navbar() {
                   <span className="hidden md:inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-gradient-to-r from-gold-400 to-gold-600 text-white">
                     ✨ Exclusive Member
                   </span>
+                )}
+                {isAdmin && (
+                  <Link
+                    to="/admin"
+                    title="Admin"
+                    aria-label="Admin"
+                    className={`hidden md:flex items-center p-2 rounded-lg transition-colors ${
+                      isActive('/admin') ? 'bg-primary-100 text-primary-700' : 'text-gray-700 hover:bg-gray-100'
+                    }`}
+                  >
+                    <ShieldCheck size={18} />
+                  </Link>
                 )}
                 <Link
                   to="/setup"

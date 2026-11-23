@@ -6,6 +6,7 @@ import RequireAuth from './components/layout/RequireAuth'
 import ScrollToTop from './components/layout/ScrollToTop'
 import LocalModeBanner from './components/layout/LocalModeBanner'
 import NotFound from './pages/NotFound'
+const Admin = lazy(() => import('./pages/Admin'))
 import Navbar from './components/layout/Navbar'
 import Footer from './components/layout/Footer'
 import Home from './pages/Home'
@@ -73,6 +74,7 @@ function App() {
               <Route path="/faq" element={<FAQ />} />
               <Route path="/help" element={<Help />} />
               <Route path="/auth" element={<Auth />} />
+              <Route path="/admin" element={<RequireAuth><Admin /></RequireAuth>} />
               <Route path="*" element={<NotFound />} />
             </Routes>
             </Suspense>

@@ -10,6 +10,8 @@ import { useToast, errorMessage } from '../components/ui/Toast'
 
 interface AppContextType {
   currentUser: User | null
+  /** Member of the ADMIN group: may review applications and manage venues and events. */
+  isAdmin: boolean
   setCurrentUser: (user: User | null) => void
   refreshCurrentUser: () => Promise<User | null>
   logout: () => Promise<void>
@@ -62,6 +64,10 @@ interface AppContextType {
   toggleSavedMentor: (mentorId: string) => Promise<void>
   requestMentorship: (mentor: User, message: string) => Promise<boolean>
   respondToMentorshipRequest: (requestId: string, status: 'ACCEPTED' | 'DECLINED') => Promise<void>
+  /** Re-reads venues and events (after an admin changes them). */
+  reloadCatalog: () => Promise<void>
+  /** Sends an in-app notification to another user; never throws. */
+  notifyUser: (n: Omit<Notification, 'id' | 'createdAt' | 'read'>) => void
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined)
@@ -108,6 +114,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const toast = useToast()
   const [currentUser, setCurrentUserState] = useState<User | null>(null)
   const [authLoading, setAuthLoading] = useState(true)
+  const [isAdmin, setIsAdmin] = useState(false)
   const [dataLoading, setDataLoading] = useState(false)
 
   const [venues, setVenues] = useState<Venue[]>(FALLBACK_VENUES)
@@ -140,8 +147,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const identity = await auth.getIdentity()
       if (!identity) {
         setCurrentUserState(null)
+        setIsAdmin(false)
         return null
       }
+      setIsAdmin(identity.isAdmin)
       const email = identity.email || ''
       let dbUser = await api.getUser(identity.userId)
       if (!dbUser) {
@@ -168,6 +177,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     try {
       await auth.signOut()
     } finally {
+      setIsAdmin(false)
       setCurrentUserState(null)
     }
   }, [])
@@ -187,20 +197,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
     )
   }, [])
 
-  // Public data: venues and events
-  useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      const [venuesData, eventsData] = await Promise.all([
-        safe('venues', api.listVenues(), [] as Venue[]),
-        safe('events', api.listEvents(), [] as Event[])
-      ])
-      if (cancelled) return
-      setVenues(venuesData.length > 0 ? venuesData : FALLBACK_VENUES)
-      setEvents(eventsData)
-    })()
-    return () => { cancelled = true }
+  const reloadCatalog = useCallback(async () => {
+    const [venuesData, eventsData] = await Promise.all([
+      safe('venues', api.listVenues(), [] as Venue[]),
+      safe('events', api.listEvents(), [] as Event[])
+    ])
+    setVenues(venuesData.length > 0 ? venuesData : FALLBACK_VENUES)
+    setEvents(eventsData)
   }, [])
+
+  // Public data: venues and events. Reloaded after sign-in/out because the caller's access changes.
+  useEffect(() => {
+    if (!authLoading) reloadCatalog()
+  }, [authLoading, currentUser?.id, reloadCatalog])
 
   // User-specific data
   const userId = currentUser?.id
@@ -276,6 +285,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }))
         setNotifications([...legacyPending, ...notificationsData])
 
+        // One-off data upgrades for records created before the public slot/rating tables existed.
+        api.ensureBookedSlots(finalSessions).catch(() => undefined)
+        api.ensureMentorRatings(feedbackData.filter(f => f.menteeId === userId)).catch(() => undefined)
+
         const mentorIds = new Set<string>(finalSessions.map(s => s.mentorId))
         if (userIsMentor) mentorIds.add(userId)
         const availabilities = await Promise.all(
@@ -330,6 +343,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (updates.status === 'CONFIRMED') message = `${me.name} confirmed your session${label}.`
       else if (updates.status === 'CANCELLED') message = `${me.name} cancelled your session${label}.${updates.cancellationReason ? ` Reason: ${updates.cancellationReason}` : ''}`
       else if (updates.status === 'COMPLETED') message = `Your session${label} was marked complete. Share your feedback from the dashboard.`
+    } else if (updates.meetingLink && updates.meetingLink !== before?.meetingLink) {
+      message = `${me.name} added the video call link for your session${label}. Open the session from your dashboard to join.`
     } else if (updates.menteeAcceptedCancellation === false) {
       message = `${me.name} did not accept the cancellation, so the session${label} is still on.`
     }
@@ -644,10 +659,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const loadMentorAvailability = useCallback(async (mentorId: string) => {
     const [availability, mentorSessions] = await Promise.all([
       safe('availability', api.getMentorAvailability(mentorId), null),
-      safe('mentor sessions', api.listSessionsForUser(mentorId, 'mentor'), [] as Session[])
+      // Public slot markers: other people's bookings without any of their details.
+      safe('booked slots', api.listBookedSlotsForMentor(mentorId), [] as Awaited<ReturnType<typeof api.listBookedSlotsForMentor>>)
     ])
     if (availability) setMentorAvailabilities(prev => ({ ...prev, [mentorId]: availability }))
-    setMentorBookings(prev => ({ ...prev, [mentorId]: mentorSessions }))
+    setMentorBookings(prev => ({ ...prev, [mentorId]: mentorSessions as Session[] }))
   }, [])
 
   const updateMentorAvailability = useCallback(async (mentorId: string, availability: MentorAvailability) => {
@@ -763,6 +779,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   return (
     <AppContext.Provider value={{
       currentUser,
+      isAdmin,
       setCurrentUser,
       refreshCurrentUser,
       logout,
@@ -812,7 +829,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       getAvailableSlotsForMentor,
       toggleSavedMentor,
       requestMentorship,
-      respondToMentorshipRequest
+      respondToMentorshipRequest,
+      reloadCatalog,
+      notifyUser
     }}>
       {children}
     </AppContext.Provider>
