@@ -1,17 +1,14 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { Amplify } from 'aws-amplify'
-import outputs from '../amplify_outputs.json'
+import { configureBackend } from './services/backend'
 import App from './App.tsx'
 import './index.css'
 
-// Configure Amplify with the generated outputs
-Amplify.configure(outputs)
+// Uses the Amplify backend when amplify_outputs.json is present, otherwise local mode.
+configureBackend()
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <App />
   </React.StrictMode>,
 )
-
-

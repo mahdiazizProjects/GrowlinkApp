@@ -4,6 +4,8 @@ import { Session } from '../../types'
 import { format } from 'date-fns'
 import { getSessionDateTime } from '../../utils/sessionTime'
 import FeedbackPrompt from '../feedback/FeedbackPrompt'
+import MeetingLink from './MeetingLink'
+import { useApp } from '../../context/AppContext'
 
 interface SessionDetailModalProps {
   session: Session
@@ -22,6 +24,9 @@ export default function SessionDetailModal({
 }: SessionDetailModalProps) {
   const [updating, setUpdating] = useState(false)
   const [updateError, setUpdateError] = useState<string | null>(null)
+  const { venues } = useApp()
+  // Sessions store only the venue id; look up the details for display.
+  const venue = session.venue ?? (session.venueId ? venues.find(v => v.id === session.venueId) : undefined)
   const isMentee = session.menteeId === currentUserId
   const sessionMoment = getSessionDateTime(session)
   const sessionDate = sessionMoment ?? new Date(session.date)
@@ -136,8 +141,8 @@ export default function SessionDetailModal({
               <p className="font-semibold text-gray-900">
                 {session.type === 'in-person' ? 'In-Person' : 'Virtual'}
               </p>
-              {session.venue && (
-                <p className="text-xs text-gray-500 mt-1">{session.venue.name}</p>
+              {venue && (
+                <p className="text-xs text-gray-500 mt-1">{venue.name}</p>
               )}
             </div>
           </div>
@@ -190,22 +195,27 @@ export default function SessionDetailModal({
           <p className="font-semibold text-gray-900">{session.topic}</p>
         </div>
 
+        <MeetingLink
+          session={session}
+          onSave={!isMentee && onUpdateSession ? link => onUpdateSession(session.id, { meetingLink: link }) : undefined}
+        />
+
         {/* Participants */}
         <div className="border-t border-gray-200 pt-4">
           <p className="text-sm font-semibold text-gray-700 mb-3">Participants</p>
           <div className="grid md:grid-cols-2 gap-4">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary-400 to-primary-600 flex items-center justify-center text-white font-semibold">
-                {session.mentor.name.charAt(0)}
+                {(session.mentor?.name || 'M').charAt(0)}
               </div>
               <div>
                 <p className="text-sm text-gray-600">Mentor</p>
-                <p className="font-semibold text-gray-900">{session.mentor.name}</p>
+                <p className="font-semibold text-gray-900">{session.mentor?.name || 'Mentor'}</p>
               </div>
             </div>
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center text-white font-semibold">
-                {session.mentee?.name.charAt(0)}
+                {(session.mentee?.name || 'M').charAt(0)}
               </div>
               <div>
                 <p className="text-sm text-gray-600">Mentee</p>
@@ -216,18 +226,18 @@ export default function SessionDetailModal({
         </div>
 
         {/* Venue Details (if in-person) */}
-        {session.type === 'in-person' && session.venue && (
+        {session.type === 'in-person' && venue && (
           <div className="border-t border-gray-200 pt-4">
             <p className="text-sm font-semibold text-gray-700 mb-2">Venue Details</p>
             <div className="bg-gray-50 rounded-lg p-4">
-              <p className="font-semibold text-gray-900">{session.venue.name}</p>
-              <p className="text-sm text-gray-600 mt-1">{session.venue.address}</p>
-              <p className="text-sm text-gray-600">{session.venue.city}</p>
-              {session.venue.amenities && session.venue.amenities.length > 0 && (
+              <p className="font-semibold text-gray-900">{venue.name}</p>
+              <p className="text-sm text-gray-600 mt-1">{venue.address}</p>
+              <p className="text-sm text-gray-600">{venue.city}</p>
+              {venue.amenities && venue.amenities.length > 0 && (
                 <div className="mt-3">
                   <p className="text-xs text-gray-600 mb-1">Amenities:</p>
                   <div className="flex flex-wrap gap-2">
-                    {session.venue.amenities.map((amenity, index) => (
+                    {venue.amenities.map((amenity, index) => (
                       <span key={index} className="px-2 py-1 bg-white rounded text-xs text-gray-700">
                         {amenity}
                       </span>

@@ -1,8 +1,9 @@
 import { useState, useMemo } from 'react'
+import { currentStreak } from '../../utils/badges'
 import { Check, X, TrendingUp, Flame, Target } from 'lucide-react'
 import { Habit, HabitCompletion } from '../../types'
 import ProgressRingChart from './ProgressRingChart'
-import { format, isToday, parseISO, startOfWeek, endOfWeek } from 'date-fns'
+import { format, parseISO, startOfWeek, endOfWeek } from 'date-fns'
 
 interface HabitDashboardProps {
   habits: Habit[]
@@ -31,37 +32,14 @@ export default function HabitDashboard({ habits, completions, onToggleCompletion
       const totalDays = habit.frequency === 'daily' ? 7 : 1
       const completionRate = totalDays > 0 ? (weekCompletions / totalDays) * 100 : 0
 
-      // Calculate streak
-      const sortedCompletions = habitCompletions
-        .map(c => c.date)
-        .sort()
-        .reverse()
-      
-      let currentStreak = 0
-      let checkDate = new Date()
-      
-      if (sortedCompletions.length > 0) {
-        const lastDate = parseISO(sortedCompletions[0])
-        if (isToday(lastDate) || lastDate < checkDate) {
-          for (let i = 0; i < sortedCompletions.length; i++) {
-            const completionDate = parseISO(sortedCompletions[i])
-            const expectedDate = new Date(checkDate)
-            expectedDate.setDate(expectedDate.getDate() - i)
-            
-            if (format(completionDate, 'yyyy-MM-dd') === format(expectedDate, 'yyyy-MM-dd')) {
-              currentStreak++
-            } else {
-              break
-            }
-          }
-        }
-      }
+      // Same rule as the dashboard: a streak survives until the end of today.
+      const streakDays = currentStreak(habitCompletions.filter(c => c.completed).map(c => c.date))
 
       return {
         habit,
         completionRate,
         weekCompletions,
-        currentStreak,
+        currentStreak: streakDays,
         totalCompletions: habitCompletions.length
       }
     })

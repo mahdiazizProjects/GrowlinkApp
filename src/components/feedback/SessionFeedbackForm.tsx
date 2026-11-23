@@ -97,6 +97,8 @@ export default function SessionFeedbackForm({
                 key={star}
                 type="button"
                 onClick={() => !isReadOnly && setRating(star)}
+                aria-label={`${star} star${star > 1 ? 's' : ''}`}
+                aria-pressed={rating === star}
                 onMouseEnter={() => !isReadOnly && setHoveredRating(star)}
                 onMouseLeave={() => !isReadOnly && setHoveredRating(0)}
                 disabled={isReadOnly}

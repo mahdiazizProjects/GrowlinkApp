@@ -3,14 +3,24 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { Calendar, Video, MapPin, Clock, CheckCircle, Zap } from 'lucide-react'
 import * as api from '../services/api'
 import { useApp } from '../context/AppContext'
-import { User } from '../types'
+import { Session, User } from '../types'
+import { useToast, errorMessage } from '../components/ui/Toast'
+import { toLocalDateString } from '../utils/availability'
 
 export default function BookSession() {
   const { mentorId } = useParams()
   const navigate = useNavigate()
-  const { venues, addSession, currentUser, getAvailableSlotsForMentor } = useApp()
+  const toast = useToast()
+  const { venues, addSession, currentUser, getAvailableSlotsForMentor, loadMentorAvailability } = useApp()
   const [mentor, setMentor] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
+  const [booking, setBooking] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
+
+  // The mentor's timetable and existing bookings, so taken slots are never offered.
+  useEffect(() => {
+    if (mentorId) loadMentorAvailability(mentorId)
+  }, [mentorId, loadMentorAvailability])
 
   useEffect(() => {
     const loadMentor = async () => {
@@ -101,84 +111,78 @@ export default function BookSession() {
   const virtualPrice = 75
   const inPersonPrice = 50
   const price = sessionType === 'in-person' ? inPersonPrice : virtualPrice
-  const discount = sessionType === 'in-person' ? virtualPrice - inPersonPrice : 0
+  const inPersonSaving = virtualPrice - inPersonPrice
+  const discount = sessionType === 'in-person' ? inPersonSaving : 0
 
-  // Handle "Book Now" - book first available slot based on mentor's availability
-  const handleBookNow = async () => {
+  const createBooking = async (bookingDate: string, slot: string, sessionTopic: string) => {
     if (!currentUser || !mentor) return
-
-    const now = new Date()
-    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-    let bookingDate = today
-    let slots = getAvailableSlotsForMentor(mentor.id, bookingDate, 60)
-    if (slots.length === 0) {
-      const tmrw = new Date(Date.now() + 86400000)
-      const tomorrow = `${tmrw.getFullYear()}-${String(tmrw.getMonth() + 1).padStart(2, '0')}-${String(tmrw.getDate()).padStart(2, '0')}`
-      bookingDate = tomorrow
-      slots = getAvailableSlotsForMentor(mentor.id, bookingDate, 60)
-    }
-    const validTime = slots.length > 0 ? slots[0] : null
-    if (!validTime) {
-      alert('No available slots in the mentor’s schedule. Please try "Schedule for Later" and pick a date.')
+    if (mentor.id === currentUser.id) {
+      setFormError("You can't book a session with yourself.")
       return
     }
-    const finalTopic = topic || `Quick session with ${mentor.name}`
-
-    const sessionDateTime = new Date(`${bookingDate}T${validTime}:00`)
-    const newSession = {
-      mentorId: mentor.id,
-      menteeId: currentUser.id,
-      date: sessionDateTime.toISOString(),
-      time: validTime,
-      duration: 60,
-      status: 'PENDING',
-      notes: finalTopic,
-      topic: finalTopic,
-      meetingLink: sessionType === 'virtual' ? `https://meet.example.com/${Date.now()}` : undefined,
+    // Re-check right before saving: someone else may have just taken the slot.
+    if (!getAvailableSlotsForMentor(mentor.id, bookingDate, 60).includes(slot)) {
+      setFormError('That time was just taken. Please pick another slot.')
+      return
     }
-
+    setFormError(null)
+    setBooking(true)
     try {
-      await addSession(newSession as any)
-      alert('Session booked successfully!')
+      const newSession: Session = {
+        id: '',
+        mentorId: mentor.id,
+        menteeId: currentUser.id,
+        type: sessionType,
+        venueId: sessionType === 'in-person' ? selectedVenue || undefined : undefined,
+        date: new Date(`${bookingDate}T${slot}:00`).toISOString(),
+        time: slot,
+        duration: 60,
+        status: 'PENDING',
+        notes: sessionTopic,
+        topic: sessionTopic
+      }
+      await addSession(newSession)
+      toast.success(`Request sent to ${mentor.name}. You'll be notified when they confirm.`)
       navigate('/dashboard')
     } catch (error) {
       console.error('Error booking session:', error)
-      alert('Failed to book session. Please try again.')
+      setFormError(errorMessage(error, 'Could not book the session. Please try again.'))
+    } finally {
+      setBooking(false)
     }
+  }
+
+  // "Book Now": the first open slot today or tomorrow.
+  const handleBookNow = async () => {
+    if (!currentUser || !mentor) return
+    if (sessionType === 'in-person' && !selectedVenue) {
+      setFormError('Choose a venue for an in-person session.')
+      return
+    }
+    for (const offset of [0, 1]) {
+      const d = new Date()
+      d.setDate(d.getDate() + offset)
+      const day = toLocalDateString(d)
+      const slots = getAvailableSlotsForMentor(mentor.id, day, 60)
+      if (slots.length > 0) {
+        await createBooking(day, slots[0], topic.trim() || `Quick session with ${mentor.name}`)
+        return
+      }
+    }
+    setFormError('No open slots today or tomorrow. Use "Schedule for Later" to pick a date.')
   }
 
   const handleBooking = async () => {
     if (!currentUser || !mentor) return
-    if (!date || !time || !topic) {
-      alert('Please fill in all fields')
+    if (!date || !time || !topic.trim()) {
+      setFormError('Choose a date and time and describe what you want to cover.')
       return
     }
     if (sessionType === 'in-person' && !selectedVenue) {
-      alert('Please select a venue')
+      setFormError('Choose a venue for an in-person session.')
       return
     }
-
-    const sessionDateTime = new Date(`${date}T${time}:00`)
-    const newSession = {
-      mentorId: mentor.id,
-      menteeId: currentUser.id,
-      date: sessionDateTime.toISOString(),
-      time,
-      duration: 60,
-      status: 'PENDING',
-      notes: topic,
-      topic,
-      meetingLink: sessionType === 'virtual' ? `https://meet.example.com/${Date.now()}` : undefined,
-    }
-
-    try {
-      await addSession(newSession as any)
-      alert('Session booked successfully!')
-      navigate('/dashboard')
-    } catch (error) {
-      console.error('Error booking session:', error)
-      alert('Failed to book session. Please try again.')
-    }
+    await createBooking(date, time, topic.trim())
   }
 
   return (
@@ -225,7 +229,7 @@ export default function BookSession() {
                   <MapPin className={`mx-auto mb-2 ${sessionType === 'in-person' ? 'text-primary-600' : 'text-gray-400'}`} size={32} />
                   <div className="font-semibold text-gray-900">In-Person</div>
                   <div className="text-sm text-primary-600 font-medium mt-1">
-                    ${inPersonPrice}/hr • Save ${discount}!
+                    ${inPersonPrice}/hr • Save ${inPersonSaving}!
                   </div>
                 </button>
                 <button
@@ -384,17 +388,22 @@ export default function BookSession() {
                 </div>
               )}
 
+              {formError && (
+                <p role="alert" className="text-sm text-red-600 mb-3">{formError}</p>
+              )}
               <div className="space-y-3">
                 <button
                   onClick={handleBookNow}
-                  className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-primary-600 to-primary-700 text-white rounded-lg font-semibold hover:from-primary-700 hover:to-primary-800 transition-all shadow-md hover:shadow-lg"
+                  disabled={booking}
+                  className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-primary-600 to-primary-700 text-white rounded-lg font-semibold hover:from-primary-700 hover:to-primary-800 transition-all shadow-md hover:shadow-lg disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   <Zap size={20} />
-                  Book Now
+                  {booking ? 'Booking…' : 'Book Now'}
                 </button>
                 <button
                   onClick={handleBooking}
-                  className="w-full px-6 py-3 bg-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-300 transition-colors"
+                  disabled={booking}
+                  className="w-full px-6 py-3 bg-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-300 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   Schedule for Later
                 </button>

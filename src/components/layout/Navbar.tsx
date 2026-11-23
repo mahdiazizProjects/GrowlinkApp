@@ -1,20 +1,53 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { User, MessageCircle, Calendar, MapPin, Home, LogIn, Target, CheckCircle, Sparkles, Settings } from 'lucide-react'
+import { User, MessageCircle, Calendar, MapPin, Home, LogIn, Target, CheckCircle, Sparkles, Settings, Menu, X, LayoutDashboard, ShieldCheck } from 'lucide-react'
 import { useApp } from '../../context/AppContext'
 import NotificationSystem from '../notifications/NotificationSystem'
-import { useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import UserProfile from '../profile/UserProfile'
 
 export default function Navbar() {
   const location = useLocation()
   const navigate = useNavigate()
-  const { currentUser, logout, notifications, getUnreadNotificationCount, markNotificationAsRead } = useApp()
+  const { currentUser, isAdmin, logout, notifications, getUnreadNotificationCount, markNotificationAsRead } = useApp()
   const [showProfile, setShowProfile] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+
+  // Close the mobile menu whenever the page changes.
+  useEffect(() => {
+    setMenuOpen(false)
+  }, [location.pathname])
 
   const isActive = (path: string) => location.pathname === path
   const normalizedRole = currentUser?.role?.toLowerCase()
   const isMentor = normalizedRole === 'mentor' || normalizedRole === 'both'
   const isMentee = normalizedRole === 'mentee' || normalizedRole === 'both'
+
+  // Everything reachable from the bar, for the small-screen menu.
+  const mobileLinks: { to: string; label: string; icon: ReactNode }[] = !currentUser
+    ? [
+        { to: '/', label: 'Home', icon: <Home size={18} /> },
+        { to: '/mentors', label: 'Mentors', icon: <User size={18} /> },
+        { to: '/community', label: 'Community', icon: <MessageCircle size={18} /> },
+        { to: '/events', label: 'Events', icon: <Calendar size={18} /> },
+        { to: '/venues', label: 'Venues', icon: <MapPin size={18} /> }
+      ]
+    : [
+        ...(isMentee ? [{ to: '/mentee-home', label: 'Home', icon: <Home size={18} /> }] : []),
+        { to: '/dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
+        ...(isMentee
+          ? [
+              { to: '/mentors', label: 'Mentors', icon: <User size={18} /> },
+              { to: '/goals', label: 'Goals', icon: <Target size={18} /> },
+              { to: '/habits', label: 'Habits', icon: <CheckCircle size={18} /> }
+            ]
+          : []),
+        { to: '/journeys', label: 'Journeys', icon: <Sparkles size={18} /> },
+        { to: '/events', label: 'Events', icon: <Calendar size={18} /> },
+        { to: '/setup', label: 'Setup', icon: <Settings size={18} /> },
+        ...(isAdmin ? [{ to: '/admin', label: 'Admin', icon: <ShieldCheck size={18} /> }] : [])
+      ]
+  // Mentees have more links, so their full bar only appears on wider screens.
+  const menuBreakpoint = isMentee ? 'lg:hidden' : 'md:hidden'
 
   const handleLogout = async () => {
     await logout()
@@ -87,13 +120,25 @@ export default function Navbar() {
           )}
 
           {/* User Actions */}
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-2 sm:space-x-4">
             {currentUser ? (
               <>
                 {currentUser.membershipTier === 'exclusive' && (
                   <span className="hidden md:inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-gradient-to-r from-gold-400 to-gold-600 text-white">
                     ✨ Exclusive Member
                   </span>
+                )}
+                {isAdmin && (
+                  <Link
+                    to="/admin"
+                    title="Admin"
+                    aria-label="Admin"
+                    className={`hidden md:flex items-center p-2 rounded-lg transition-colors ${
+                      isActive('/admin') ? 'bg-primary-100 text-primary-700' : 'text-gray-700 hover:bg-gray-100'
+                    }`}
+                  >
+                    <ShieldCheck size={18} />
+                  </Link>
                 )}
                 <Link
                   to="/setup"
@@ -106,8 +151,8 @@ export default function Navbar() {
                   <Settings size={18} />
                   <span>Setup</span>
                 </Link>
-                {/* Notifications for mentors */}
-                {isMentor && (
+                {/* Notifications for everyone; the mentor dashboard has its own bell that opens sessions */}
+                {!(isMentor && isActive('/dashboard')) && (
                   <NotificationSystem
                     notifications={notifications.filter(n => n.userId === currentUser.id)}
                     unreadCount={getUnreadNotificationCount(currentUser.id)}
@@ -118,7 +163,7 @@ export default function Navbar() {
                 {isMentee && (
                   <Link
                     to="/dashboard"
-                    className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
+                    className={`hidden md:flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
                       isActive('/dashboard')
                         ? 'bg-primary-100 text-primary-700'
                         : 'text-gray-700 hover:bg-gray-100'
@@ -152,9 +197,31 @@ export default function Navbar() {
                 <span>Sign In</span>
               </Link>
             )}
+            <button
+              type="button"
+              onClick={() => setMenuOpen(open => !open)}
+              className={`${menuBreakpoint} p-2 rounded-lg text-gray-700 hover:bg-gray-100`}
+              aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+              aria-expanded={menuOpen}
+              aria-controls="mobile-menu"
+            >
+              {menuOpen ? <X size={24} /> : <Menu size={24} />}
+            </button>
           </div>
         </div>
       </div>
+
+      {menuOpen && (
+        <div id="mobile-menu" className={`${menuBreakpoint} border-t border-gray-100 bg-white`}>
+          <div className="px-4 py-3 space-y-1">
+            {mobileLinks.map(link => (
+              <NavLink key={link.to} to={link.to} icon={link.icon} active={isActive(link.to)}>
+                {link.label}
+              </NavLink>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Profile Modal */}
       {showProfile && currentUser && (
@@ -170,10 +237,11 @@ export default function Navbar() {
   )
 }
 
-function NavLink({ to, icon, children, active }: { to: string; icon: React.ReactNode; children: React.ReactNode; active: boolean }) {
+function NavLink({ to, icon, children, active }: { to: string; icon: ReactNode; children: ReactNode; active: boolean }) {
   return (
     <Link
       to={to}
+      aria-current={active ? 'page' : undefined}
       className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-colors ${
         active
           ? 'bg-primary-100 text-primary-700 font-semibold'

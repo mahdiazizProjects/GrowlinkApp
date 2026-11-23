@@ -1,23 +1,40 @@
 import { useState } from 'react'
 import { Mail, Phone, MapPin, Send, CheckCircle } from 'lucide-react'
+import { useApp } from '../context/AppContext'
+import * as api from '../services/api'
+import { errorMessage } from '../components/ui/Toast'
 
 export default function Contact() {
+  const { currentUser } = useApp()
+  const [sending, setSending] = useState(false)
+  const [sendError, setSendError] = useState<string | null>(null)
   const [formData, setFormData] = useState({
-    name: '',
-    email: '',
+    name: currentUser?.name || '',
+    email: currentUser?.email || '',
     subject: '',
     message: ''
   })
   const [submitted, setSubmitted] = useState(false)
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    // In a real app, this would send the form data to a backend
-    setSubmitted(true)
-    setTimeout(() => {
-      setSubmitted(false)
-      setFormData({ name: '', email: '', subject: '', message: '' })
-    }, 3000)
+    setSendError(null)
+    setSending(true)
+    try {
+      await api.createContactMessage({
+        userId: currentUser?.id,
+        name: formData.name.trim(),
+        email: formData.email.trim(),
+        subject: formData.subject.trim() || undefined,
+        message: formData.message.trim()
+      })
+      setSubmitted(true)
+      setFormData(prev => ({ ...prev, subject: '', message: '' }))
+    } catch (error) {
+      setSendError(errorMessage(error, 'Could not send your message. Please try again.'))
+    } finally {
+      setSending(false)
+    }
   }
 
   return (
@@ -108,9 +125,13 @@ export default function Contact() {
                   <CheckCircle className="text-green-600 mx-auto mb-2" size={32} />
                   <p className="text-green-800 font-semibold">Message sent successfully!</p>
                   <p className="text-green-700 text-sm mt-2">We'll get back to you soon.</p>
+                  <button type="button" onClick={() => setSubmitted(false)} className="mt-4 text-sm font-semibold text-green-800 underline">
+                    Send another message
+                  </button>
                 </div>
               ) : (
                 <form onSubmit={handleSubmit} className="space-y-4">
+                  {sendError && <p role="alert" className="text-sm text-red-600">{sendError}</p>}
                   <div>
                     <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-2">
                       Name
@@ -169,10 +190,11 @@ export default function Contact() {
 
                   <button
                     type="submit"
-                    className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-primary-600 text-white rounded-lg font-semibold hover:bg-primary-700 transition-colors"
+                    disabled={sending}
+                    className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-primary-600 text-white rounded-lg font-semibold hover:bg-primary-700 transition-colors disabled:opacity-60"
                   >
                     <Send size={20} />
-                    Send Message
+                    {sending ? 'Sending…' : 'Send Message'}
                   </button>
                 </form>
               )}

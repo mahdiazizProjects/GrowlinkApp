@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Plus, X, Clock, Calendar, MapPin, Gift, Trash2 } from 'lucide-react'
 import { Habit, Goal } from '../../types'
 import * as api from '../../services/api'
@@ -7,7 +7,7 @@ interface ActionPlanBuilderProps {
   goal: Goal
   existingHabits?: Habit[]
   existingActionPlanId?: string
-  onSave: (habits: Omit<Habit, 'id' | 'createdAt' | 'updatedAt'>[], actionPlanId?: string) => void
+  onSave: (habits: (Omit<Habit, 'id' | 'createdAt' | 'updatedAt'> & { id?: string; actionItemId?: string })[], actionPlanId?: string) => void
   onDelete?: (actionPlanId: string) => void
   onClose: () => void
 }
@@ -15,77 +15,56 @@ interface ActionPlanBuilderProps {
 export default function ActionPlanBuilder({ goal, existingHabits = [], existingActionPlanId, onSave, onDelete, onClose }: ActionPlanBuilderProps) {
   const [habits, setHabits] = useState<Array<Partial<Habit & { actionItemId?: string }>>>([])
   const [loading, setLoading] = useState(!!existingActionPlanId)
+  const [validationError, setValidationError] = useState<string | null>(null)
 
+  // Initialise once per goal/plan. Depending on `existingHabits` (a new array every render)
+  // would wipe unsaved edits whenever the parent re-rendered.
+  const existingHabitsRef = useRef(existingHabits)
+  existingHabitsRef.current = existingHabits
   useEffect(() => {
+    let cancelled = false
+    const blank = () => ({
+      title: '',
+      description: '',
+      frequency: 'daily' as const,
+      duration: 2,
+      cue: { time: '', place: '', context: '' },
+      reward: '',
+      status: 'active' as const
+    })
     const loadActionPlan = async () => {
+      const saved = existingHabitsRef.current
+      let items: { id: string; title: string; description?: string; frequency: string; status?: string }[] = []
       if (existingActionPlanId) {
         setLoading(true)
         try {
-          const actionItems = await api.listActionItems(existingActionPlanId)
-          if (actionItems.length > 0) {
-            // Convert ActionItems to Habits format
-            const loadedHabits = actionItems.map((item: { id: string; title: string; description?: string; frequency: string; status?: string }) => {
-              const status = item.status === 'ACTIVE' ? 'active' as const : item.status === 'PAUSED' ? 'paused' as const : 'completed' as const
-              return {
-                actionItemId: item.id,
-                title: item.title,
-                description: item.description || '',
-                frequency: item.frequency === 'WEEKLY' ? 'weekly' as const : 'daily' as const,
-                duration: 2,
-                cue: { time: '', place: '', context: '' },
-                reward: '',
-                status
-              }
-            })
-            setHabits(loadedHabits)
-          } else {
-            // No items found, start with empty habit
-            setHabits([{
-              title: '',
-              description: '',
-              frequency: 'daily' as const,
-              duration: 2,
-              cue: { time: '', place: '', context: '' },
-              reward: '',
-              status: 'active' as const
-            }])
-          }
+          items = await api.listActionItems(existingActionPlanId)
         } catch (error) {
           console.error('Error loading action plan:', error)
-          // Fallback to existing habits or empty
-          setHabits(existingHabits.length > 0 
-            ? existingHabits.map(h => ({ ...h }))
-            : [{
-                title: '',
-                description: '',
-                frequency: 'daily' as const,
-                duration: 2,
-                cue: { time: '', place: '', context: '' },
-                reward: '',
-                status: 'active' as const
-              }]
-          )
-        } finally {
-          setLoading(false)
         }
-      } else {
-        // No existing plan, use existing habits or start fresh
-        setHabits(existingHabits.length > 0 
-          ? existingHabits.map(h => ({ ...h }))
-          : [{
-              title: '',
-              description: '',
-              frequency: 'daily' as const,
-              duration: 2,
-              cue: { time: '', place: '', context: '' },
-              reward: '',
-              status: 'active' as const
-            }]
-        )
       }
+      if (cancelled) return
+      if (saved.length > 0) {
+        // Saved habits carry the full detail (duration, cue, reward); link each to its action item.
+        setHabits(saved.map(h => ({ ...h, actionItemId: items.find(i => i.title === h.title)?.id })))
+      } else if (items.length > 0) {
+        // Plans created before habits were stored: rebuild from the action items.
+        setHabits(items.map(item => ({
+          ...blank(),
+          actionItemId: item.id,
+          title: item.title,
+          description: item.description || '',
+          frequency: item.frequency === 'WEEKLY' ? 'weekly' as const : 'daily' as const,
+          status: item.status === 'PAUSED' ? 'paused' as const : item.status === 'COMPLETED' ? 'completed' as const : 'active' as const
+        })))
+      } else {
+        setHabits([blank()])
+      }
+      setLoading(false)
     }
     loadActionPlan()
-  }, [existingActionPlanId, existingHabits])
+    return () => { cancelled = true }
+  }, [goal.id, existingActionPlanId])
 
   const addHabit = () => {
     setHabits([...habits, {
@@ -119,16 +98,18 @@ export default function ActionPlanBuilder({ goal, existingHabits = [], existingA
         cue: h.cue || { time: '', place: '', context: '' },
         reward: h.reward,
         status: h.status || 'active',
-        // Preserve actionItemId if it exists (for matching existing items)
+        // Preserve ids so existing habits and action items are updated rather than duplicated
+        ...(h.id && { id: h.id }),
         ...(h.actionItemId && { actionItemId: h.actionItemId })
       }))
 
     // Allow saving with 0 habits - this will delete all items from the plan
     // If it's a new plan with 0 habits, we still need at least one
-    if (validHabits.length === 0 && !existingActionPlanId) {
-      alert('Please add at least one habit with a title and duration')
+    if (validHabits.length === 0 && !existingActionPlanId && existingHabits.length === 0) {
+      setValidationError('Add at least one habit with a title and duration.')
       return
     }
+    setValidationError(null)
 
     onSave(validHabits, existingActionPlanId)
     onClose()
@@ -326,6 +307,7 @@ export default function ActionPlanBuilder({ goal, existingHabits = [], existingA
           >
             Cancel
           </button>
+          {validationError && <p role="alert" className="text-sm text-red-600 self-center mr-auto">{validationError}</p>}
           <button
             onClick={handleSave}
             className="px-6 py-2 bg-primary-600 text-white rounded-lg font-semibold hover:bg-primary-700 transition-colors"

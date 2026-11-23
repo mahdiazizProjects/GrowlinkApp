@@ -129,14 +129,20 @@ export default function BrowseMentors() {
               </div>
 
               <div className="flex items-center justify-between pt-4 border-t border-gray-100">
-                <div className="flex items-center space-x-1">
-                  <Star className="text-gold-500 fill-gold-500" size={18} />
-                  <span className="font-semibold text-gray-900">{mentor.rating}</span>
-                  <span className="text-sm text-gray-600">({mentor.totalSessions} sessions)</span>
-                </div>
-                {mentor.inPersonSessions && mentor.inPersonSessions > 0 && (
+                {mentor.rating ? (
+                  <div className="flex items-center space-x-1">
+                    <Star className="text-gold-500 fill-gold-500" size={18} />
+                    <span className="font-semibold text-gray-900">{mentor.rating.toFixed(1)}</span>
+                    <span className="text-sm text-gray-600">
+                      ({mentor.reviewCount} {mentor.reviewCount === 1 ? 'review' : 'reviews'})
+                    </span>
+                  </div>
+                ) : (
+                  <span className="text-sm text-gray-500">New mentor</span>
+                )}
+                {!!mentor.inPersonSessions && !!mentor.totalSessions && (
                   <span className="text-xs text-primary-600 font-medium">
-                    {Math.round((mentor.inPersonSessions / mentor.totalSessions!) * 100)}% in-person
+                    {Math.round((mentor.inPersonSessions / mentor.totalSessions) * 100)}% in-person
                   </span>
                 )}
               </div>

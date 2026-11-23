@@ -59,130 +59,103 @@ A premium mentorship platform that connects curated mentors and mentees through 
 
 ## Tech Stack
 
-- **React 18** with TypeScript
-- **Vite** for fast development
-- **Tailwind CSS** for styling
-- **React Router** for navigation
-- **Lucide React** for icons
-- **Recharts** for progress visualizations
-- **Framer Motion** for animations (installed, ready for use)
-- **Zustand** for state management (installed, ready for use)
-- **date-fns** for date manipulation
+- **React 18** + TypeScript, built with **Vite**
+- **Tailwind CSS**, **React Router**, **Lucide** icons, **date-fns**
+- **AWS Amplify Gen 2**: Cognito for accounts, AppSync + DynamoDB for data (`amplify/`)
+- **Vitest** for unit tests
 
 ## Getting Started
 
-### Prerequisites
+Requires Node.js 18 or newer.
 
-- Node.js (v16 or higher)
-- npm or yarn
-
-### Installation
-
-1. Install dependencies:
 ```bash
 npm install
+npm run dev          # http://localhost:5173
 ```
 
-2. Start the development server:
-```bash
-npm run dev
-```
+### Two ways to run
 
-3. Open your browser and navigate to `http://localhost:5173`
+**Local demo mode (no AWS needed).** If there is no `amplify_outputs.json` in the project root, the app
+runs entirely in your browser: accounts and data live in `localStorage`, and a yellow banner says so.
+It starts with a few demo mentors, venues and events so there is something to click. Create any account
+on the sign-in page (pick *Mentor* or *Mentee*) and everything works: booking, approvals, goals, habits,
+feedback, notifications. Open a private window, or clear site data, to start fresh. Demo accounts are for
+development only and are not secure.
 
-### Sign In as Mentor (Demo)
+**Cloud mode (real backend).** Put `amplify_outputs.json` in the project root and restart. Sign-up then
+goes through Cognito (with email verification and password reset) and data is stored in DynamoDB. See
+[SETUP.md](./SETUP.md) for how to get that file. You can force local mode with `VITE_FORCE_LOCAL=true`.
 
-To test the mentor dashboard features:
+> **After pulling these changes, redeploy the backend** (`npx ampx sandbox` or a new Amplify Console
+> build). The schema gained new tables (Habit, HabitCompletion, SessionFeedback, MentorSessionNote,
+> Notification, Venue, Event, SavedMentor, MentorshipRequest, MentorApplication, ContactMessage) and new
+> fields on Session and Goal. Until you redeploy, cloud mode will show errors for those features.
+> Venues and events start empty in cloud mode; add rows to the `Venue` and `Event` tables to list them.
 
-1. Navigate to `http://localhost:5173/dashboard`
-2. Click **"Sign In as Mentor (Demo)"** button
-3. You'll be logged in as Sarah Chen (mentor account)
-4. Explore the mentor dashboard with three tabs:
-   - **Dashboard**: Overview, sessions, and feedback
-   - **My Mentees**: List of all mentees
-   - **Analytics**: Performance metrics and insights
+### Scripts
 
-See [MENTOR_LOGIN_GUIDE.md](./MENTOR_LOGIN_GUIDE.md) for detailed instructions.
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | Dev server with hot reload |
+| `npm run build` | Type-check and build to `dist/` |
+| `npm run preview` | Serve the production build locally |
+| `npm test` | Unit tests (slot availability, streaks and badges, local data store) |
+| `npm run lint` | ESLint, zero warnings allowed |
+| `npm run typecheck` | TypeScript only |
+| `npm run check:backend` | Compiles the Amplify backend locally (no AWS account or deploy needed) |
 
-### Build for Production
+## How the main flows work
 
-```bash
-npm run build
-```
+- **Booking:** mentees pick a time inside the mentor's weekly availability (mentors set it under
+  *My availability*). Slots that overlap another pending or confirmed booking are never offered, and the
+  slot is re-checked right before saving. The mentor is notified, approves or declines, and the mentee is
+  notified. Requests whose time passes without approval expire automatically.
+- **After a session:** the mentor marks it complete, the mentee leaves feedback, and the mentor's rating
+  (shown on browse cards and their profile) is the average of real feedback. Nothing is invented: mentors
+  without feedback show as "New mentor".
+- **Goals and habits:** a goal starts as a draft and becomes active once it has an action plan. Each
+  habit is stored with its cue and reward; check-ins drive streaks, points and badges.
+- **Mentorship requests:** mentees can request a mentor from their home page; mentors accept or decline
+  from their dashboard.
+- **Become a mentor:** submits an application. An admin approves or rejects it on the **/admin** page;
+  approval turns the account into a mentor (or "both" for existing mentees) and notifies them.
+- **Virtual sessions:** the mentor pastes a Meet/Zoom/Teams link in the session dialog; the mentee is
+  notified and gets a *Join call* button.
+- **Admin (/admin):** mentor applications, contact messages, and adding or removing venues and events.
 
-The built files will be in the `dist` directory.
+## Access rules and admins
+
+Signed-in requests are checked against per-user rules in `amplify/data/resource.ts`: your goals, habits,
+reflections and notes are yours alone; a session is visible to its mentor and mentee; feedback can be read
+by the mentor but not edited. Signed-out visitors can only read the public catalogue (mentor profiles
+without emails, availability, venues, events, ratings, taken time slots) and send the contact and mentor
+forms. Taken slots, ratings and event attendance live in small public tables (`BookedSlot`,
+`MentorRating`, `EventAttendance`) so those features work without exposing private records.
+
+To make someone an admin: AWS Console → Cognito → your user pool → Groups → `ADMIN` → add user. They
+need to sign out and back in. In local demo mode every account can open /admin.
 
 ## Project Structure
 
 ```
+amplify/              Amplify Gen 2 backend (auth + data schema)
 src/
-├── components/       # Reusable components
-│   ├── layout/      # Navbar, Footer, etc.
-│   └── habits/      # Habit-based mentorship components
-│       ├── IdentityBuilderModal.tsx
-│       ├── ActionPlanBuilder.tsx
-│       ├── HabitDashboard.tsx
-│       ├── ProgressRingChart.tsx
-│       ├── ReflectionJournal.tsx
-│       ├── BadgeSystem.tsx
-│       ├── CueChecklist.tsx
-│       └── MentorDashboard.tsx
-├── context/         # React Context for state management
-├── data/            # Mock data for development
-├── pages/           # Page components
-│   ├── Goals.tsx
-│   ├── Habits.tsx
-│   ├── Reflections.tsx
-│   └── Dashboard.tsx (enhanced)
-├── types/           # TypeScript type definitions
-│   └── index.ts (includes Goal, Habit, Reflection, Badge types)
-├── App.tsx          # Main app component with routing
-├── main.tsx         # Entry point
-└── index.css        # Global styles
+  components/         UI, grouped by area (events, feedback, habits, journeys, layout, mentee, mentor, ui)
+  context/            AppContext: signed-in user and their data, with all mutations
+  data/demoData.ts    Seed data for local demo mode only
+  pages/              One component per route (loaded on demand)
+  services/
+    api.ts            Every read and write; paginates list queries
+    auth.ts           Sign-in/up/reset (Cognito in cloud mode, browser storage locally)
+    backend.ts        Detects cloud vs local mode
+    localStore.ts     Browser-storage stand-in for the Amplify data client
+  types/              Shared TypeScript types
+  utils/              Pure logic (availability, badges, session time) with tests
 ```
 
-## Available Pages
+## Before launch
 
-### Core Pages
-- `/` - Home page with featured mentors and features
-- `/mentors` - Browse all mentors with search and filters
-- `/mentors/:id` - Individual mentor profile
-- `/book/:mentorId` - Book a session (virtual or in-person)
-- `/community` - Community hub with stats and events
-- `/events` - View all upcoming events and hangouts
-- `/venues` - Browse partner venues
-- `/dashboard` - User dashboard with habit progress overview (requires login)
-
-### Habit-Based Mentorship Pages (NEW!)
-- `/goals` - Create and manage identity-based goals
-- `/habits` - Daily habit tracker with progress visualization
-- `/reflections` - Weekly reflection journal and badge system
-
-## Key Differentiators
-
-1. **1% Habit-Based Growth**: Identity-based goals with small, actionable habits that compound over time
-2. **Exclusive Membership**: Curated mentors and limited access for quality
-3. **In-Person Incentives**: Lower prices and better ratings for offline meetings
-4. **Venue Partnerships**: Integration with physical spaces for community building
-5. **Social Hangouts**: Casual events beyond structured mentoring sessions
-6. **Premium Feel**: Beautiful UI with exclusive member badges and verification
-7. **Mentor Visibility**: Enhanced mentor dashboard to track mentee progress and provide feedback
-
-## Development
-
-The app uses mock data for development. In a production environment, you would:
-
-- Connect to a backend API
-- Implement authentication
-- Add real payment processing
-- Connect to venue booking systems
-- Implement real-time features for community events
-- **Habit System Backend**: 
-  - Database tables for goals, habits, habit_completions, reflections, badges
-  - API endpoints for CRUD operations
-  - Cron jobs for weekly reflection reminders
-  - AI integration for reflection summarization and insights
-  - Badge earning logic and automation
+See [NEXT_STEPS.md](./NEXT_STEPS.md) for the post-deploy checklist and known limits.
 
 ## License
 

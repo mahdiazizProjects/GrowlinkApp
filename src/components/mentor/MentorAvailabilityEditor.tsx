@@ -54,9 +54,11 @@ export default function MentorAvailabilityEditor({
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
+  // Reset the form only when the stored timetable actually changes, not on every parent render.
+  const slotsKey = JSON.stringify(initialAvailability.slots)
   useEffect(() => {
-    setSlots(initialAvailability.slots)
-  }, [initialAvailability.mentorId, JSON.stringify(initialAvailability.slots)])
+    setSlots(JSON.parse(slotsKey) as MentorAvailabilitySlot[])
+  }, [initialAvailability.mentorId, slotsKey])
 
   const applyPreset = (presetSlots: MentorAvailabilitySlot[]) => {
     setSlots(presetSlots.map(s => ({ ...s })))

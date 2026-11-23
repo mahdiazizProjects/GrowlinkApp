@@ -27,9 +27,10 @@ export default function MentorProfile() {
         setError(null)
         
         // Fetch mentor and sessions in parallel
-        const [mentorData, sessionsData] = await Promise.all([
+        const [mentorData, sessionsData, publicRating] = await Promise.all([
           api.getUser(id),
-          api.listSessionsForUser(id, 'mentor')
+          api.listSessionsForUser(id, 'mentor'),
+          api.getMentorRating(id).catch(() => null)
         ])
         
         if (!mentorData) {
@@ -37,7 +38,9 @@ export default function MentorProfile() {
         } else if (mentorData.role !== 'MENTOR' && mentorData.role !== 'mentor' && mentorData.role !== 'BOTH') {
           setError('User is not a mentor')
         } else {
-          setMentor(mentorData)
+          setMentor(publicRating
+            ? { ...mentorData, rating: publicRating.rating, reviewCount: publicRating.count }
+            : mentorData)
           setSessions(sessionsData || [])
         }
       } catch (err) {
@@ -124,16 +127,17 @@ export default function MentorProfile() {
                 </div>
               )}
               <div className="flex items-center space-x-4">
-                {mentor.rating && (
+                {mentor.rating ? (
                   <div className="flex items-center space-x-1">
                     <Star className="text-gold-500 fill-gold-500" size={20} />
-                    <span className="text-xl font-semibold">{mentor.rating}</span>
+                    <span className="text-xl font-semibold">{mentor.rating.toFixed(1)}</span>
+                    <span className="text-gray-600">
+                      ({mentor.reviewCount} {mentor.reviewCount === 1 ? 'review' : 'reviews'})
+                    </span>
                   </div>
+                ) : (
+                  <span className="text-gray-600">New mentor, no reviews yet</span>
                 )}
-                <span className="text-gray-600">
-                  {totalSessions} {totalSessions === 1 ? 'session' : 'sessions'}
-                  {inPersonSessions > 0 && ` • ${inPersonSessions} in-person`}
-                </span>
               </div>
             </div>
             <Link
@@ -171,8 +175,9 @@ export default function MentorProfile() {
             </div>
 
             {/* Stats */}
+            {currentUser && currentUser.id !== mentor.id && (
             <div className="bg-white rounded-xl shadow-lg p-6">
-              <h2 className="text-2xl font-semibold text-gray-900 mb-4">Session Statistics</h2>
+              <h2 className="text-2xl font-semibold text-gray-900 mb-4">Your sessions with {mentor.name.split(' ')[0]}</h2>
               <div className="grid grid-cols-2 gap-4">
                 <div className="bg-primary-50 rounded-lg p-4">
                   <div className="flex items-center space-x-2 mb-2">
@@ -197,6 +202,7 @@ export default function MentorProfile() {
                 </div>
               </div>
             </div>
+            )}
 
             {/* Your session history with this mentor (when logged in as mentee) */}
             {currentUser && mySessionHistory.length > 0 && (

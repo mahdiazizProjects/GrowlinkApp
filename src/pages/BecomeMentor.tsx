@@ -2,9 +2,11 @@ import { useState } from 'react'
 import { User, Award, CheckCircle, Star, ArrowRight, Mail, Briefcase, GraduationCap } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import { useNavigate } from 'react-router-dom'
+import * as api from '../services/api'
+import { errorMessage } from '../components/ui/Toast'
 
 export default function BecomeMentor() {
-  const { currentUser, setCurrentUser } = useApp()
+  const { currentUser } = useApp()
   const navigate = useNavigate()
   const [formData, setFormData] = useState({
     name: currentUser?.name || '',
@@ -17,6 +19,8 @@ export default function BecomeMentor() {
   })
   const [currentSkill, setCurrentSkill] = useState('')
   const [submitted, setSubmitted] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
 
   const commonSkills = [
     'Product Design', 'Software Engineering', 'Data Science', 'Marketing',
@@ -35,16 +39,34 @@ export default function BecomeMentor() {
     setFormData({ ...formData, skills: formData.skills.filter(s => s !== skill) })
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    // In a real app, this would submit to backend
-    setSubmitted(true)
-    // Optionally update current user to mentor role
-    if (currentUser) {
-      setCurrentUser({
-        ...currentUser,
-        role: 'mentor'
+    if (formData.skills.length === 0) {
+      setSubmitError('Add at least one area of expertise.')
+      return
+    }
+    setSubmitError(null)
+    setSubmitting(true)
+    try {
+      // Applications are reviewed by the team; the account's role only changes after approval.
+      await api.createMentorApplication({
+        userId: currentUser?.id,
+        name: formData.name.trim(),
+        email: formData.email.trim(),
+        details: {
+          bio: formData.bio,
+          location: formData.location,
+          skills: formData.skills,
+          experience: formData.experience,
+          whyMentor: formData.whyMentor
+        }
       })
+      setSubmitted(true)
+      window.scrollTo(0, 0)
+    } catch (error) {
+      setSubmitError(errorMessage(error, 'Could not submit your application. Please try again.'))
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -62,16 +84,16 @@ export default function BecomeMentor() {
             </p>
             <div className="space-y-3">
               <button
-                onClick={() => navigate('/dashboard')}
+                onClick={() => navigate(currentUser ? '/dashboard' : '/')}
                 className="w-full px-6 py-3 bg-primary-600 text-white rounded-lg font-semibold hover:bg-primary-700 transition-colors"
               >
-                Go to Dashboard
+                {currentUser ? 'Go to Dashboard' : 'Back to Home'}
               </button>
               <button
-                onClick={() => setSubmitted(false)}
+                onClick={() => navigate('/mentors')}
                 className="w-full px-6 py-3 border-2 border-primary-600 text-primary-600 rounded-lg font-semibold hover:bg-primary-50 transition-colors"
               >
-                Edit Application
+                Browse Mentors
               </button>
             </div>
           </div>
@@ -276,11 +298,13 @@ export default function BecomeMentor() {
             <div className="flex items-center gap-4 pt-4 border-t border-gray-200">
               <button
                 type="submit"
-                className="flex items-center gap-2 px-8 py-3 bg-primary-600 text-white rounded-lg font-semibold hover:bg-primary-700 transition-colors"
+                disabled={submitting}
+                className="flex items-center gap-2 px-8 py-3 bg-primary-600 text-white rounded-lg font-semibold hover:bg-primary-700 transition-colors disabled:opacity-60"
               >
-                Submit Application
+                {submitting ? 'Submitting…' : 'Submit Application'}
                 <ArrowRight size={20} />
               </button>
+              {submitError && <p role="alert" className="text-sm text-red-600">{submitError}</p>}
               <p className="text-sm text-gray-600">
                 By submitting, you agree to our mentor guidelines and code of conduct.
               </p>

@@ -1,8 +1,29 @@
-import { MessageCircle, Users, TrendingUp, Calendar } from 'lucide-react'
-import { mockEvents } from '../data/mockData'
+import { useEffect, useMemo, useState } from 'react'
+import { MessageCircle, Users, Sparkles, Calendar } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { useApp } from '../context/AppContext'
+import * as api from '../services/api'
+import EventCard, { eventDate } from '../components/events/EventCard'
 
 export default function Community() {
+  const { events, journeys } = useApp()
+  const [mentorCount, setMentorCount] = useState<number | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    api.listMentors()
+      .then(list => { if (!cancelled) setMentorCount(list.length) })
+      .catch(() => { if (!cancelled) setMentorCount(null) })
+    return () => { cancelled = true }
+  }, [])
+
+  const upcoming = useMemo(
+    () => events.filter(e => eventDate(e).getTime() + e.duration * 60000 >= Date.now()),
+    [events]
+  )
+  const publicPosts = journeys.filter(j => j.visibility.toLowerCase() === 'everyone').length
+  const attendees = new Set(upcoming.flatMap(e => e.attendees)).size
+
   return (
     <div className="min-h-screen bg-gray-50 py-12 px-4">
       <div className="max-w-7xl mx-auto">
@@ -15,10 +36,10 @@ export default function Community() {
 
         {/* Stats */}
         <div className="grid md:grid-cols-4 gap-6 mb-12">
-          <StatCard icon={<Users />} number="2,400+" label="Active Members" />
-          <StatCard icon={<MessageCircle />} number="180+" label="Community Posts" />
-          <StatCard icon={<Calendar />} number="24+" label="Upcoming Events" />
-          <StatCard icon={<TrendingUp />} number="95%" label="Satisfaction Rate" />
+          <StatCard icon={<Users />} number={mentorCount === null ? '—' : String(mentorCount)} label="Mentors" />
+          <StatCard icon={<MessageCircle />} number={String(publicPosts)} label="Journey Posts" />
+          <StatCard icon={<Calendar />} number={String(upcoming.length)} label="Upcoming Events" />
+          <StatCard icon={<Sparkles />} number={String(attendees)} label="People Attending" />
         </div>
 
         {/* Upcoming Events */}
@@ -29,33 +50,15 @@ export default function Community() {
               View All →
             </Link>
           </div>
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {mockEvents.map((event) => (
-              <div key={event.id} className="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-all duration-300">
-                {event.image && (
-                  <img src={event.image} alt={event.title} className="w-full h-48 object-cover" />
-                )}
-                <div className="p-6">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="px-3 py-1 bg-primary-100 text-primary-700 rounded-full text-xs font-semibold">
-                      {event.type}
-                    </span>
-                    {event.price === 0 && (
-                      <span className="px-3 py-1 bg-gold-100 text-gold-700 rounded-full text-xs font-semibold">
-                        Free
-                      </span>
-                    )}
-                  </div>
-                  <h3 className="text-xl font-semibold text-gray-900 mb-2">{event.title}</h3>
-                  <p className="text-gray-600 text-sm mb-4 line-clamp-2">{event.description}</p>
-                  <div className="flex items-center justify-between text-sm text-gray-500">
-                    <span>{new Date(event.date).toLocaleDateString()}</span>
-                    <span>{event.attendees.length}/{event.maxAttendees} attending</span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+          {upcoming.length === 0 ? (
+            <p className="bg-white rounded-xl shadow-sm p-8 text-center text-gray-600">
+              No upcoming events yet. New meetups are announced here.
+            </p>
+          ) : (
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {upcoming.slice(0, 3).map(event => <EventCard key={event.id} event={event} />)}
+            </div>
+          )}
         </div>
 
         {/* Community Features */}
@@ -64,10 +67,11 @@ export default function Community() {
           <div className="grid md:grid-cols-3 gap-6">
             <div className="p-6 bg-primary-50 rounded-lg">
               <MessageCircle className="text-primary-600 mb-4" size={32} />
-              <h3 className="font-semibold text-gray-900 mb-2">Discussion Forums</h3>
-              <p className="text-gray-600 text-sm">
-                Join conversations, ask questions, and share insights with the community.
+              <h3 className="font-semibold text-gray-900 mb-2">Journeys</h3>
+              <p className="text-gray-600 text-sm mb-3">
+                Share progress, react and comment on what others are learning.
               </p>
+              <Link to="/journeys" className="text-primary-600 text-sm font-semibold hover:text-primary-700">Open Journeys →</Link>
             </div>
             <div className="p-6 bg-primary-50 rounded-lg">
               <Calendar className="text-primary-600 mb-4" size={32} />
